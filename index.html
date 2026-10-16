@@ -1055,7 +1055,8 @@ function controlled() {
   // (공 뒤에서 쫓는 선수를 고르면 조작해도 막을 수 없음). 한 번 고른 선수는 다른 선수가 3m 넘게 더 가깝기 전엔 유지
   const oppAttack = (ball.owner && ball.owner.team === 1) || (!ball.owner && ball.lastTeam === 1 && !ball.dead);
   if (oppAttack) {
-    const ahead = players.filter(p => p.team === 0 && !p.gk && p.pos.x < ball.pos.x - 1.5 && !(p.downT > 0));
+    let ahead = players.filter(p => p.team === 0 && !p.gk && p.pos.x < ball.pos.x - 1.5 && !(p.downT > 0));
+    if (ahead.some(p => p.pressRole !== 'mark')) ahead = ahead.filter(p => p.pressRole !== 'mark'); // 침투자를 따라붙는 선수는 빼고 (뺏어 오면 침투자를 놓침)
     if (ahead.length) {
       const aim = new V(ball.pos.x - 6, 0, ball.pos.z * .8);
       ahead.sort((a, b) => d2(a.pos, aim) - d2(b.pos, aim));
@@ -1350,6 +1351,17 @@ function pressThink(dt) {
       p.speed = 7.5; p.pressRole = 'block'; pool.splice(pool.indexOf(p), 1);
     });
   }
+  // 뒷공간 침투 막기: 공 가진 선수의 팀원이 우리 진영(하프라인 8m 앞부터)에서 우리 골대 쪽으로 달리고(초속 2.5m 이상) 공보다 앞이거나 수비 라인 12m 안에 오면, 가장 가까운 수비 선수가 따라붙어 골대 쪽을 막음
+  const lineX = Math.max(...players.filter(p => p.team === t && !p.gk).map(p => s * p.pos.x)); // 우리 최종 수비 라인 (공격팀 기준 깊이)
+  const runners = players.filter(q => q.team === o.team && q !== o && !q.gk && s * q.vel.x > 2.5 && s * q.pos.x > -8 && (s * q.pos.x > lineX - 12 || s * q.pos.x > s * ball.pos.x - 5))
+    .sort((a, b) => s * b.pos.x - s * a.pos.x).slice(0, 3); // 골대에 가까운 순
+  for (const q of runners) {
+    if (!pool.length) break;
+    const pt = new V(q.pos.x + s * 1.5 + q.vel.x * .6, 0, q.pos.z + q.vel.z * .6); // 침투자가 0.6초 뒤 있을 곳보다 골대 쪽 1.5m (달리는 길을 앞질러 막음)
+    let bi = 0, bd = 1e9; pool.forEach((p, j) => { const dd = d2(p.pos, pt) - (role(p) === 'df' ? 3 : 0) - (p.markOf === q ? 6 : 0); if (dd < bd) { bd = dd; bi = j; } }); // 수비수 우선, 이미 따라붙던 선수는 계속(6m 넘게 가까운 선수가 있어야 교체)
+    const p = pool.splice(bi, 1)[0]; p.target.copy(pt); p.speed = 7.6; p.pressRole = 'mark'; p.markOf = q;
+  }
+  for (const p of players) if (p.pressRole !== 'mark') p.markOf = null;
   const opts = players.filter(q => q.team === o.team && q !== o && !q.gk && d2(q.pos, ball.pos) < 25)
     .sort((a, b) => d2(a.pos, ball.pos) - d2(b.pos, ball.pos)).slice(0, 3);
   for (const q of opts) {
