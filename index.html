@@ -1049,12 +1049,19 @@ function controlled() {
   if (ball.owner && ball.owner.team === 0) return ball.owner;
   if (manualCtrl) return manualCtrl; // 양쪽 버튼으로 직접 고른 선수
   if (ball.recv && ball.recv.team === 0) return ball.recv;
-  if (!ball.owner && loose[0]) return loose[0].p;
-  // 상대가 공을 가지면: 공보다 뒤(우리 골대 쪽)에 있는 선수 중 가장 가까운 선수가 접근
-  if (ball.owner && ball.owner.team === 1) {
-    const behind = nearestTo(0, ball.pos, 10, false).find(p => p.pos.x < ball.pos.x + .5);
-    if (behind) return behind;
+  // 상대 공격(상대가 공을 갖거나 상대 패스가 가는 중): 공보다 우리 골대 쪽에 1.5m 이상 앞서 있는 선수 중, 공과 골대 사이 6m 지점에 가장 가까운 선수
+  // (공 뒤에서 쫓는 선수를 고르면 조작해도 막을 수 없음). 한 번 고른 선수는 다른 선수가 3m 넘게 더 가깝기 전엔 유지
+  const oppAttack = (ball.owner && ball.owner.team === 1) || (!ball.owner && ball.lastTeam === 1 && !ball.dead);
+  if (oppAttack) {
+    const ahead = players.filter(p => p.team === 0 && !p.gk && p.pos.x < ball.pos.x - 1.5 && !(p.downT > 0));
+    if (ahead.length) {
+      const aim = new V(ball.pos.x - 6, 0, ball.pos.z * .8);
+      ahead.sort((a, b) => d2(a.pos, aim) - d2(b.pos, aim));
+      if (lastCtrl && lastCtrl.team === 0 && !lastCtrl.gk && lastCtrl.pos.x < ball.pos.x + .5 && !(lastCtrl.downT > 0) && d2(lastCtrl.pos, aim) < d2(ahead[0].pos, aim) + 8) return lastCtrl; // 공보다 골대 쪽에 있는 한 계속 유지 (8m 넘게 더 가까운 선수가 생겨야 바뀜)
+      return ahead[0];
+    }
   }
+  if (!ball.owner && loose[0]) return loose[0].p;
   return nearestTo(0, ball.pos, 1, false)[0];
 }
 function gkThink(p) {
@@ -1309,6 +1316,58 @@ function computeCover() {
     coverRole.set(pick, fz); pool.splice(pool.indexOf(pick), 1);
   }
 }
+// ---------- 전술 압박 (양 팀 공통) ----------
+// 상대가 공을 잡으면 ① 가장 가까운 선수가 1차 압박(견제) ② 터치라인 근처·자기 진영 깊은 곳이면 한 명 더 붙어 2인 압박
+// ③ 다음 선수들은 공 가진 선수의 가까운 패스 길목(받을 선수 앞 2.5m, 공과 일직선)에 서서 차단 ④ 나머지는 공보다 10m 넘게 앞에 있지 않게 내려와 간격 유지
+// (우리 팀: 조작 중인 선수는 빼고 AI가 따로 압박. 공 8m 밖 수비수는 박스로 물러나는 기존 규칙 유지)
+function pressThink(dt) {
+  const o = ball.owner;
+  for (const p of players) p.pressRole = null;
+  if (!o || ball.setPiece || ball.inHands || kickoffLock >= 0) return;
+  const t = 1 - o.team, s = sgn(o.team), bx = s * ball.pos.x, ctrl = t === 0 ? controlled() : null;
+  const pool = players.filter(p => p.team === t && !p.gk && p !== ctrl && !(p.downT > 0) && !(p.tackleT > 0) && !(p.getUpT > 0))
+    .sort((a, b) => d2(a.pos, ball.pos) - d2(b.pos, ball.pos));
+  if (!pool.length) return;
+  const presser = pool.shift();
+  presser.target.copy(jockey(presser, o, dt)); presser.speed = 7.2; presser.pressRole = 'press';
+  const trap = Math.abs(ball.pos.z) > HW - 12 || bx < -HL + 30; // 터치라인 12m 안 / 자기 골대 30m 안 → 2인 압박
+  if (trap && pool.length) {
+    const p2 = pool.shift(); // 공 가진 선수의 진행 방향 앞·안쪽을 막아 섬
+    p2.target.set(ball.pos.x + s * 2.5, 0, ball.pos.z - Math.sign(ball.pos.z || 1) * 2); p2.speed = 7; p2.pressRole = 'trap';
+  }
+  // 슈팅 각 좁히기: 공이 우리 골대 30m 안·폭 24m 안(슈팅 찬스)이면, 물러나지 않고 가장 가까운 두 명이 뛰어나가 공→골대 중앙 일직선 위(2.5m·5m 앞)에 서서 길을 막음. 슛은 몸에 맞고 튀어 나옴
+  const gx = s * HL, shotZone = bx > HL - 30 && Math.abs(ball.pos.z) < 24;
+  if (shotZone) {
+    const dx = gx - ball.pos.x, dz = -ball.pos.z, d = Math.hypot(dx, dz) || 1;
+    const mid = new V(ball.pos.x + dx / d * 3.5, 0, ball.pos.z + dz / d * 3.5);
+    const two = pool.map((p, j) => [d2(p.pos, mid), j]).sort((a, b) => a[0] - b[0]).slice(0, 2).map(x => pool[x[1]]); // 선 가운데에 가장 가까운 두 명
+    two.sort((a, b) => d2(a.pos, ball.pos) - d2(b.pos, ball.pos)); // 공에 더 가까운 쪽이 앞(2.5m), 다른 쪽이 뒤(5m) → 자리가 매 프레임 안 바뀜
+    two.forEach((p, i) => {
+      const k = i ? 5 : 2.5;
+      p.target.set(ball.pos.x + dx / d * k, 0, ball.pos.z + dz / d * k + (i ? Math.sign(ball.pos.z || 1) * -1.2 : 0)); // 뒤쪽은 살짝 안쪽(먼 포스트 쪽)
+      p.speed = 7.5; p.pressRole = 'block'; pool.splice(pool.indexOf(p), 1);
+    });
+  }
+  const opts = players.filter(q => q.team === o.team && q !== o && !q.gk && d2(q.pos, ball.pos) < 25)
+    .sort((a, b) => d2(a.pos, ball.pos) - d2(b.pos, ball.pos)).slice(0, 3);
+  for (const q of opts) {
+    const dx = q.pos.x - ball.pos.x, dz = q.pos.z - ball.pos.z, d = Math.hypot(dx, dz) || 1;
+    const pt = new V(q.pos.x - dx / d * 2.5, 0, q.pos.z - dz / d * 2.5);
+    let bi = -1, bd = 18;
+    pool.forEach((p, i) => {
+      if (t === 0 && role(p) === 'df' && d2(p.pos, ball.pos) > 8) return; // 우리 수비수는 박스로 물러남 (기존 규칙)
+      const dd = d2(p.pos, pt); if (dd < bd) { bd = dd; bi = i; }
+    });
+    if (bi < 0) continue;
+    const p = pool.splice(bi, 1)[0]; p.target.copy(pt); p.speed = 6.5; p.pressRole = 'lane';
+  }
+  for (const p of pool) { // 나머지: 공보다 10m 넘게 앞(상대 골대 쪽)에 있지 않게 내려와 촘촘히
+    const dir = sgn(t);
+    if (dir * (p.target.x - ball.pos.x) > 10) { p.target.x = ball.pos.x + dir * 10; p.speed = Math.max(p.speed, 6); p.pressRole = 'compact'; }
+  }
+  // 수비 속도: 상대가 공을 가진 동안 수비수(2~5번)는 자리 이동도 빠르게(6.5), 압박은 7.5
+  for (const p of players) if (p.team === t && !p.gk) { if (role(p) === 'df') p.speed = Math.max(p.speed, 6.5); if (p.pressRole === 'press') p.speed = 7.5; }
+}
 function think(dt) {
   if (ball.dead) { // 아웃 후 대기: 공은 쫓지 않고 자기 자리로 천천히
     for (const p of players) { p.target.copy(formTarget(p)); p.speed = 3; }
@@ -1330,6 +1389,7 @@ function think(dt) {
   keepSpacing();
   // 우리 공일 때 미드필더·공격수는 자기 자리까지 빠르게(초속 7m) 올라감 (앞으로 2m 넘게 가야 할 때)
   if (FAST_UP && ball.owner) for (const p of players) if (p.team === ball.owner.team && p !== ball.owner && !p.gk && p.num >= 6 && sgn(p.team) * (p.target.x - p.pos.x) > 2) p.speed = Math.max(p.speed, 7);
+  pressThink(dt); // 전술 압박 (양 팀)
   for (const t of [0, 1]) gkThink(gkOf(t));
   // 흘러가는 공: 양 팀에서 공 경로에 가장 빨리 닿는 선수를 고름 (패스 받을 선수도 이 선수로 바뀜)
   loose = [null, null];
@@ -1382,14 +1442,6 @@ function think(dt) {
 
   // 상대팀
   if (ball.owner && ball.owner.team === 1) awayHolder(ball.owner, dt);
-  else if (ball.owner) {
-    const aim = ball.pos;
-    // 우리가 공을 가지면: 공보다 뒤(상대 골대 쪽)에 있는 선수 중 가장 가까운 한 명이 접근
-    const order = nearestTo(1, aim, 10, false);
-    const presser = (ball.owner && order.find(p => p.pos.x > ball.pos.x - .5)) || order[0];
-    presser.target.copy(jockey(presser, ball.owner, dt)); presser.speed = 7.2; // 가까우면 견제하며 따라감
-  }
-
   // 우리팀 (조작 선수)
   const kx = (keys.ArrowRight ? 1 : 0) - (keys.ArrowLeft ? 1 : 0); // 직접 이동은 방향키 (D는 슈팅)
   const kz = (keys.ArrowDown ? 1 : 0) - (keys.ArrowUp ? 1 : 0);
