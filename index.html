@@ -2819,11 +2819,11 @@ const rpBuf = [], RP_MAX = 12 * 60;
 let replay = null;
 function rpSnap() { // 지금 상태 한 장
   const ps = players.map(p => [p.pos.x, p.pos.y, p.pos.z, p.face, p.vel.x, p.vel.z, ...RP_FIELDS.map(f => +p[f] || 0)]);
-  return { ps, ball: [ball.pos.x, ball.pos.y, ball.pos.z, ball.vel.x, ball.vel.y, ball.vel.z], score: $('sc').textContent };
+  return { ps, ball: [ball.pos.x, ball.pos.y, ball.pos.z, ball.vel.x, ball.vel.y, ball.vel.z], q: ballMesh.quaternion.clone(), score: $('sc').textContent };
 }
 function rpApply(s) {
   players.forEach((p, i) => { const a = s.ps[i]; p.pos.set(a[0], a[1], a[2]); p.face = a[3]; p.vel.set(a[4], 0, a[5]); RP_FIELDS.forEach((f, j) => { p[f] = f === 'kickBig' || f === 'kickShot' ? !!a[6 + j] : a[6 + j]; }); });
-  ball.pos.set(s.ball[0], s.ball[1], s.ball[2]); ball.vel.set(s.ball[3], s.ball[4], s.ball[5]); ballMesh.position.copy(ball.pos);
+  ball.pos.set(s.ball[0], s.ball[1], s.ball[2]); ball.vel.set(s.ball[3], s.ball[4], s.ball[5]); ballMesh.position.copy(ball.pos); if (s.q) ballMesh.quaternion.copy(s.q); // 공 구르는 회전도 그대로
 }
 function recordFrame() { if (ISO_LAB || edit) return; rpBuf.push(rpSnap()); if (rpBuf.length > RP_MAX) rpBuf.shift(); }
 function startReplay(sec, auto) {
