@@ -1438,7 +1438,7 @@ function think(dt) {
   } else if (loose[t] && !(ball.recv && ball.recv.gk && ball.recv.team === t)) { // 골키퍼에게 간 공은 필드 선수가 쫓지 않음
     const lp = loose[t].p, bx = ball.pos.x - lp.pos.x, bz = ball.pos.z - lp.pos.z, fx = Math.sin(lp.face), fz = Math.cos(lp.face);
     const fromBehind = bx * fx + bz * fz < -.5 && (-bx * ball.vel.x - bz * ball.vel.z) > 0 && Math.hypot(bx, bz) < 15; // 공이 등 뒤에서 나에게 오는 중
-    if (lp === ball.recv && fromBehind) { const bs = Math.hypot(ball.vel.x, ball.vel.z) || 1; lp.target.copy(loose[t].pt).addScaledVector(ball.vel, 2 / bs); lp.speed = 7.2; } // 등 뒤에서 오는 공: 멈추지 않고 공이 지나갈 선 위로 들어가 같은 방향으로 달리며 받음
+    if (lp === ball.recv && fromBehind && !lp.gk) { const bs = Math.hypot(ball.vel.x, ball.vel.z) || 1; lp.target.copy(loose[t].pt).addScaledVector(ball.vel, 2 / bs); lp.speed = 7.2; } // 등 뒤에서 오는 공: 멈추지 않고 공이 지나갈 선 위로 들어가 같은 방향으로 달리며 받음
     else { lp.target.copy(loose[t].pt); lp.speed = 7.2; }
   }
 
