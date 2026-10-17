@@ -27,6 +27,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a10;font-family:'M
 #train a b{color:#ffd54f;display:block}
 #train a span{opacity:.85;line-height:1.5}
 #replayTag{position:fixed;top:48px;left:50%;transform:translateX(-50%);display:none;background:rgba(200,30,30,.85);color:#fff;font-size:15px;font-weight:bold;padding:5px 14px;border-radius:8px;z-index:40}
+#newVer{position:fixed;top:48px;left:50%;transform:translateX(-50%);display:none;background:rgba(30,136,229,.92);color:#fff;font-size:13px;font-weight:bold;padding:5px 12px;border-radius:8px;z-index:41;cursor:pointer}
 #msg{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:72px;font-weight:900;text-shadow:0 0 14px #000;display:none}
 b{color:#ffe14d}
 #gauge{position:fixed;left:0;top:0;transform:translate(-50%,-100%);width:70px;height:9px;background:rgba(0,0,0,.6);border:1.5px solid #fff;border-radius:5px;overflow:hidden;display:none;pointer-events:none}
@@ -119,6 +120,7 @@ b{color:#ffe14d}
 </div>
 <div id="msg"></div>
 <div id="replayTag">▶ 리플레이</div>
+<div id="newVer">🔄 새 버전 있음 — 클릭하면 적용 (경기는 처음부터)</div>
 <div id="lab"></div>
 <button id="editBtn">상대 전술 편집</button>
 <div id="editPanel">
@@ -2984,9 +2986,11 @@ function replayCamera() { // 옆에서 낮게 보는 중계 카메라
 // 3초마다 서버에 index.html 수정 시각을 물어, 바뀌었으면 경기가 멈춘 틈(골·아웃·킥오프 대기)에 새로고침. 한창 경기 중이면 멈출 때까지 기다림
 if (location.hostname === 'localhost') {
   let ver = null, pendingReload = false;
-  const check = () => fetch('/version').then(r => r.text()).then(v => { if (ver === null) ver = v; else if (v !== ver) { ver = v; pendingReload = true; toast('새 버전 — 경기가 멈추면 자동 새로고침'); } }).catch(() => {});
+  const check = () => fetch('/version').then(r => r.text()).then(v => { if (ver === null) ver = v; else if (v !== ver) { ver = v; pendingReload = true; $('newVer').style.display = 'block'; } }).catch(() => {});
   setInterval(check, 3000);
-  setInterval(() => { if (pendingReload && !replay && (freeze > 0 || ball.dead || kickoffLock >= 0 || clock < 3)) location.reload(); }, 300);
+  // 경기 중에는 절대 새로고침하지 않음(점수·경기가 날아가므로). 경기 시작 전(5초 안)에만 자동, 그 외엔 위 '새 버전' 표시를 클릭해야 적용
+  setInterval(() => { if (pendingReload && !replay && clock < 5 && kickoffLock >= 0) location.reload(); }, 500);
+  $('newVer').onclick = () => location.reload();
 }
 
 // ---------- 클릭 진단: 경기장(캔버스)이 아닌 것이 클릭을 받으면 무엇인지 자막으로 알림 (노트북에서 클릭이 안 먹는 문제 찾기용) ----------
