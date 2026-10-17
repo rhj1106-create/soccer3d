@@ -91,7 +91,8 @@ b{color:#ffe14d}
 <b>왼쪽 클릭 · 잔디</b> 이동 / 드리블<br>
 <b>왼쪽 빠르게 3번</b> 부스터 (전력 질주)<br>
 <b>Q</b> 페인팅 턴 &nbsp; <b>G</b> 공 치고 달리기<br>
-<b>휠</b> 상대와 마주보면 긁어 돌기</div>
+<b>휠</b> 상대와 마주보면 긁어 돌기<br>
+<b>노트북 터치패드</b> 오른쪽 클릭 = 두 손가락 탭, 휠 = 두 손가락 쓸기 (마우스 권장)</div>
 <div><h4>3단계 · 패스 받을 때</h4>
 <b>잔디 클릭</b> 등 뒤 확인 + 돌 방향 정하기<br>
 <b>왼쪽 클릭 → 바로 오른쪽 클릭</b> 흘리며 턴<br>
@@ -2551,6 +2552,8 @@ $('helpClose').onclick = () => { $('help').classList.add('hide'); try { localSto
 $('helpBtn').onclick = e => { e.stopPropagation(); $('help').classList.toggle('hide'); };
 $('trainBtn').onclick = e => { e.stopPropagation(); $('train').classList.toggle('hide'); };
 $('trainClose').onclick = () => $('train').classList.add('hide');
+// 설명창·훈련창이 열린 채 바깥(경기장)을 클릭하면 창을 닫음 (노트북 등 처음 접속에서 클릭이 안 먹는 것처럼 보이지 않게)
+addEventListener('mousedown', e => { for (const id of ['help', 'train']) { const el = $(id); if (!el.classList.contains('hide') && !el.contains(e.target) && !e.target.closest('#speed')) { el.classList.add('hide'); if (id === 'help') try { localStorage.setItem('soccerHelpSeen', '1'); } catch (err) {} } } }, true);
 function frame(now) {
   const dt = clamp((now - last) / 1000, 0, .05) * (labSlow ? .3 : 1) * GAME_SPEED; last = now; // (첫 화면에서 시간이 거꾸로 잡혀 음수가 되면 위치가 NaN으로 깨짐 → 0 이상으로) // 연습 화면 '느리게 보기', 전체 게임 속도
   if (edit) {
