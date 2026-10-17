@@ -868,7 +868,8 @@ function updateBall(dt) {
       let sb = null, sd = 2.4; // (상대 공 가로채기는 아래에서 1.2m로 제한)
       for (const p of players) {
         if (p.gk || (p === ball.lastKicker && ball.kickT > 0) || p.downT > 0 || justKicked(p) || (sp > 14 && ball.pos.y < 1.8 && p.team !== ball.lastTeam)) continue;
-        if (!(p === ball.recv || p === chaser[p.team]) || !runReachOK(p, d2(p.pos, ball.pos))) continue;
+        const mateOK = p.team === ball.lastTeam && !(ball.recv && d2(ball.recv.pos, ball.pos) < 4); // 받을 선수가 공 4m 안에 없으면 옆을 지나는 다른 팀원도 뻗어 받음
+        if (!(p === ball.recv || p === chaser[p.team] || mateOK) || !runReachOK(p, d2(p.pos, ball.pos))) continue;
         if (p.team !== ball.lastTeam && d2(p.pos, ball.pos) >= INTERCEPT_R) continue; // 상대 공은 다리를 뻗어도 1.5보(1.2m)까지 // 팀원 다른 선수는 안 뻗음, 달리는 방향 뒤로 오는 공도 못 뻗음
         const d = d2(p.pos, ball.pos);
         const passing = (p.pos.x - ball.pos.x) * ball.vel.x + (p.pos.z - ball.pos.z) * ball.vel.z <= 0; // 공이 가장 가까운 지점을 막 지나는 중
@@ -1032,8 +1033,9 @@ function flightLanding() {
   return pos.setY(0);
 }
 function landRecv(o, to) {
-  const L = ball.vel.y > 0 ? flightLanding() : to.clone(); let best = null, bt = 1e9; // 땅볼(백패스 등)은 찬 지점 기준
-  for (const q of players) { if (q.team !== o.team || q === o || q.gk) continue; const t = d2(q.pos, L) / 7.2 + turnPenalty(q, L); if (t < bt) { bt = t; best = q; } }
+  const L = ball.vel.y > 0 ? flightLanding() : to.clone(); let best = null, bt = 1e9;
+  // 땅볼(공간 패스): 목표 지점이 아니라 공이 굴러가는 길에 가장 빨리 닿는 팀원(달리는 속도 포함) / 띄운 공: 떨어질 곳에 가장 빨리 가는 팀원
+  for (const q of players) { if (q.team !== o.team || q === o || q.gk) continue; const t = ball.vel.y > 0 ? d2(q.pos, L) / 7.2 + turnPenalty(q, L) : intercept(q, 7.2).t; if (t < bt) { bt = t; best = q; } }
   ball.recv = best; if (o.team === 0) manualCtrl = null;
 }
 function landing() {
