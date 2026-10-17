@@ -1094,9 +1094,11 @@ function controlled() {
   if (ball.owner && ball.owner.team === 0) return ball.owner;
   if (manualCtrl) return manualCtrl; // 양쪽 버튼으로 직접 고른 선수
   if (ball.recv && ball.recv.team === 0) return ball.recv;
-  // 상대 공격(상대가 공을 갖거나 상대 패스가 가는 중): 공보다 우리 골대 쪽에 1.5m 이상 앞서 있는 선수 중, 공과 골대 사이 6m 지점에 가장 가까운 선수
+  // 상대가 공을 가진 중: 공보다 우리 골대 쪽에 1.5m 이상 앞서 있는 선수 중, 공과 골대 사이 6m 지점에 가장 가까운 선수
   // (공 뒤에서 쫓는 선수를 고르면 조작해도 막을 수 없음). 한 번 고른 선수는 다른 선수가 3m 넘게 더 가깝기 전엔 유지
-  const oppAttack = (ball.owner && ball.owner.team === 1) || (!ball.owner && ball.lastTeam === 1 && !ball.dead);
+  // (흘러가는 공은 아래 '가장 빨리 닿는 선수' 규칙이 먼저: 공을 흘려보내지 않게 바로 넘김)
+  if (!ball.owner && loose[0] && !ball.dead) return loose[0].p;
+  const oppAttack = ball.owner && ball.owner.team === 1;
   if (oppAttack) {
     let ahead = players.filter(p => p.team === 0 && !p.gk && p.pos.x < ball.pos.x - 1.5 && !(p.downT > 0));
     if (ahead.some(p => p.pressRole !== 'mark')) ahead = ahead.filter(p => p.pressRole !== 'mark'); // 침투자를 따라붙는 선수는 빼고 (뺏어 오면 침투자를 놓침)
