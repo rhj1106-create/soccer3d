@@ -93,7 +93,7 @@ b{color:#ffe14d}
 <b>왼쪽 클릭 · 잔디</b> 이동 / 드리블<br>
 <b>왼쪽 빠르게 3번</b> 부스터 (전력 질주)<br>
 <b>Q</b> 페인팅 턴 &nbsp; <b>G</b> 공 치고 달리기<br>
-<b>휠</b> 상대와 마주보면 긁어 돌기<br>
+<b>휠 뒤로</b> 공 밟고 뒷걸음질 (상대를 본 채) &nbsp; <b>휠 앞으로</b> 상대와 마주보면 긁어 돌기<br>
 <b>노트북 터치패드</b> 오른쪽 클릭 = 두 손가락 탭, 휠 = 두 손가락 쓸기 (마우스 권장)</div>
 <div><h4>3단계 · 패스 받을 때</h4>
 <b>잔디 클릭</b> 등 뒤 확인 + 돌 방향 정하기<br>
@@ -108,7 +108,7 @@ b{color:#ffe14d}
 <b>Z · X</b> 골키퍼 조작 중 왼쪽·오른쪽 다이빙<br>
 <b>O</b> 오프사이드 트랩 — 상대가 패스하기 직전에 누르면 수비 라인이 한 줄로 9m 올라감 (3초에 한 번)</div>
 <div><h4>5단계 · 화면</h4>
-<b>휠</b> 확대 · 축소<br>
+<b>휠</b> 확대 · 축소 (공 없을 때)<br>
 <b>V</b> 방향 화살표 &nbsp; <b>M</b> 미니맵<br>
 <b>H</b> 이 설명 열기/닫기 &nbsp; <b>R</b> 최근 8초 리플레이 (골 뒤엔 자동)<br>
 <b>속도 0.5× / 0.75× / 1×</b> 게임 속도<br>
@@ -1719,6 +1719,7 @@ function movePlayers(dt) {
     if (p.tackleCD > 0) p.tackleCD -= dt;
     if (p.tackleT > 0) p.vel.lerp(want, Math.min(1, dt * 14)); // 태클은 몸을 날리는 동작이라 예외
     else if (p.dragBackT > 0 && ball.owner === p) p.vel.set(-Math.sin(p.face) * 4, 0, -Math.cos(p.face) * 4); // 드래그백: 상대를 본 채 공을 끌고 뒤로 물러남
+    else if (p.backT > 0 && ball.owner === p) { p.backT -= dt; p.vel.set(-Math.sin(p.face) * 3, 0, -Math.cos(p.face) * 3); } // 휠 뒤로: 공 밟고 뒷걸음질 (보는 방향 유지)
     else if (p.diveT > 0) { if (p.diveVel && p.diveT > .45 && ball.owner !== p) p.vel.copy(p.diveVel); else p.vel.multiplyScalar(Math.exp(-8 * dt)); } // 다이빙: 날아갔다가 땅에 떨어져 멈춤 (누워 있는 동안은 못 달림, 일어난 뒤에 움직임)
     else if (p.downT > 0) p.vel.multiplyScalar(Math.exp(-10 * dt)); // 넘어진 선수: 잔디 마찰로 금방 멈춤 (미끄럼틀처럼 계속 미끄러지지 않게)
     else moveWithInertia(p, want, dt);
@@ -1727,7 +1728,7 @@ function movePlayers(dt) {
     p.pos.x = clamp(p.pos.x, -HL - 1.5, HL + 1.5); p.pos.z = clamp(p.pos.z, -HW - 1.5, HW + 1.5);
     const vs = Math.hypot(p.vel.x, p.vel.z), run = sprint && vs > .4;
     const tf = run ? Math.atan2(p.vel.x, p.vel.z) : (ball.owner === p ? p.face : Math.atan2(ball.pos.x - p.pos.x, ball.pos.z - p.pos.z));
-    if (!p.lockFace && !(p.dragBackT > 0)) p.face = lerpAngle(p.face, tf, Math.min(1, dt * (run ? 10 : 5))); // lockFace: 연습 화면에서 정한 방향 유지
+    if (!p.lockFace && !(p.dragBackT > 0) && !(p.backT > 0 && ball.owner === p)) p.face = lerpAngle(p.face, tf, Math.min(1, dt * (run ? 10 : 5))); // lockFace: 연습 화면에서 정한 방향 유지
   }
   // 선수끼리 겹치지 않게
   for (let i = 0; i < players.length; i++) for (let j = i + 1; j < players.length; j++) {
@@ -2058,9 +2059,12 @@ function updateGauge() {
 // 휠: 공을 가진 우리 선수가 상대와 정면으로 마주 보고 있으면(앞 4m 안) 드래그백, 아니면 화면 확대/축소
 addEventListener('wheel', e => {
   const o = ball.owner;
-  if (!edit && freeze <= 0 && o && o.team === 0 && !ball.setPiece && !ball.inHands && kickoffLock < 0 && facingRival(o)) {
-    if (!(o.dragBackCD > 0)) dragBack(o, e.deltaY < 0 ? -1 : 1); // 휠 위 = 왼쪽 어깨로, 아래 = 오른쪽 어깨로 돌기
-    return;
+  if (!edit && freeze <= 0 && o && o.team === 0 && !ball.setPiece && !ball.inHands && kickoffLock < 0) {
+    if (e.deltaY > 0) { // 휠 뒤로(아래): 공을 발바닥으로 밟은 채 상대를 보며 뒷걸음질 (한 칸에 0.3초, 최대 1초까지 쌓임)
+      if (!(o.dragBackT > 0)) { o.backT = Math.min((o.backT || 0) + .3, 1); userMove = null; ball.stealT = Math.max(ball.stealT, .4); }
+      return;
+    }
+    if (facingRival(o)) { if (!(o.dragBackCD > 0)) dragBack(o, -1); return; } // 휠 앞으로(위) + 상대 정면: 긁어 돌기 (왼쪽 어깨로)
   }
   zoom = clamp(zoom * (1 + e.deltaY * .001), .45, 2);
 }, { passive: true });
