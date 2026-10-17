@@ -1719,7 +1719,7 @@ function movePlayers(dt) {
     if (p.tackleCD > 0) p.tackleCD -= dt;
     if (p.tackleT > 0) p.vel.lerp(want, Math.min(1, dt * 14)); // 태클은 몸을 날리는 동작이라 예외
     else if (p.dragBackT > 0 && ball.owner === p) p.vel.set(-Math.sin(p.face) * 4, 0, -Math.cos(p.face) * 4); // 드래그백: 상대를 본 채 공을 끌고 뒤로 물러남
-    else if (p.backT > 0 && ball.owner === p) { p.backT -= dt; p.vel.set(-Math.sin(p.face) * 3, 0, -Math.cos(p.face) * 3); } // 휠 뒤로: 공 밟고 뒷걸음질 (보는 방향 유지)
+    else if (p.backT > 0 && ball.owner === p) { p.backT -= dt; if (p.backT <= 0) p.vel.set(0, 0, 0); else p.vel.set(-Math.sin(p.face) * 3, 0, -Math.cos(p.face) * 3); } // 휠 뒤로: 공 밟고 뒷걸음질 (보는 방향 유지, 끝나면 바로 멈춰 몸이 돌지 않게)
     else if (p.diveT > 0) { if (p.diveVel && p.diveT > .45 && ball.owner !== p) p.vel.copy(p.diveVel); else p.vel.multiplyScalar(Math.exp(-8 * dt)); } // 다이빙: 날아갔다가 땅에 떨어져 멈춤 (누워 있는 동안은 못 달림, 일어난 뒤에 움직임)
     else if (p.downT > 0) p.vel.multiplyScalar(Math.exp(-10 * dt)); // 넘어진 선수: 잔디 마찰로 금방 멈춤 (미끄럼틀처럼 계속 미끄러지지 않게)
     else moveWithInertia(p, want, dt);
