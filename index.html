@@ -693,8 +693,11 @@ function shoot(p, pw = .6 + Math.random() * .25) {
   // 9·10번이 아닌 선수의 15m 이상 슈팅은 빈 공간 80% 이상일 때만 못 막고, 그 외에는 골키퍼가 90% 막음
   const far = Math.hypot(gx - p.pos.x, p.pos.z) >= 15, weak = far && p.num !== 9 && p.num !== 10;
   const open = Math.max(0, Math.abs(Math.sign(tz) * GW - gk.pos.z) - CFG.gkReach), ratio = Math.min(1, open / (2 * GW)); // 다이빙 범위 밖 빈 공간
-  ball.unsavable = Math.abs(tz) < GW && ratio >= (weak ? .8 : .4) ? gk.team : -1;
-  ball.sureSave = weak && ball.unsavable < 0 && Math.random() < .9 ? gk.team : -1;
+  // 중거리(22m 이상)·각도 50° 이상 슈팅은 들어가기 어려움: 빈 공간이 90% 이상 열려야 못 막고, 그 외엔 골키퍼가 85%(둘 다면 95%) 막음. 조준도 더 흔들림
+  const dist = Math.hypot(gx - p.pos.x, p.pos.z), angDeg = Math.atan2(Math.abs(p.pos.z), Math.abs(gx - p.pos.x)) * 180 / Math.PI, hard = dist >= 22 || angDeg >= 50, veryHard = dist >= 22 && angDeg >= 50;
+  ball.unsavable = Math.abs(tz) < GW && ratio >= (hard ? .9 : weak ? .8 : .4) ? gk.team : -1;
+  ball.sureSave = ball.unsavable < 0 && ((weak && Math.random() < .9) || (hard && Math.random() < (veryHard ? .95 : .85))) ? gk.team : -1;
+  if (hard) { const wob = (Math.random() - .5) * (veryHard ? 4 : 2.5); ball.vel.x += -Math.sign(gx) * 0; ball.vel.z += wob * Math.abs(ball.vel.x) / Math.max(10, dist); } // 먼·비스듬한 슈팅은 좌우로 흔들려 빗나가기도 함
   ball.recv = null;
   toast((p.team === 0 ? '슈팅!' : '상대 슈팅!') + (ball.unsavable >= 0 ? ' 빈 공간 ' + Math.round(ratio * 100) + '% - 못 막음' : ''));
   if (LAB && !TRAIN) labStart(p, pw);
