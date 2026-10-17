@@ -102,7 +102,8 @@ b{color:#ffe14d}
 <b>스페이스</b> 태클 (공이 떠 있으면 점프) &nbsp; <b>T</b> 태클<br>
 <b>E</b> 공에 가장 빨리 닿는 우리 선수로 바꾸기<br>
 <b>왼쪽+오른쪽 동시</b> (공 없을 때) 커서 근처 선수 선택<br>
-<b>Z · X</b> 골키퍼 조작 중 왼쪽·오른쪽 다이빙</div>
+<b>Z · X</b> 골키퍼 조작 중 왼쪽·오른쪽 다이빙<br>
+<b>O</b> 오프사이드 트랩 — 상대가 패스하기 직전에 누르면 수비 라인이 한 줄로 9m 올라감 (3초에 한 번)</div>
 <div><h4>5단계 · 화면</h4>
 <b>휠</b> 확대 · 축소<br>
 <b>V</b> 방향 화살표 &nbsp; <b>M</b> 미니맵<br>
@@ -1339,6 +1340,27 @@ function computeCover() {
 // 상대가 공을 잡으면 ① 가장 가까운 선수가 1차 압박(견제) ② 터치라인 근처·자기 진영 깊은 곳이면 한 명 더 붙어 2인 압박
 // ③ 다음 선수들은 공 가진 선수의 가까운 패스 길목(받을 선수 앞 2.5m, 공과 일직선)에 서서 차단 ④ 나머지는 공보다 10m 넘게 앞에 있지 않게 내려와 간격 유지
 // (우리 팀: 조작 중인 선수는 빼고 AI가 따로 압박. 공 8m 밖 수비수는 박스로 물러나는 기존 규칙 유지)
+// ---------- 오프사이드 트랩 (O키) ----------
+// 상대가 공을 가졌을 때 O를 누르면 우리 수비수(2~5번)가 1.6초 동안 한 줄로 9m 앞(공 바로 뒤까지)으로 뛰어 올라감 → 그 순간 앞에 남은 상대는 오프사이드.
+// 공을 압박 중인 수비수와 직접 조작 중인 선수는 제외. 한 번 쓰면 3초 뒤에 다시 가능
+const trap = { t: 0, cd: 0, x: 0 };
+function offsideTrap() {
+  if (edit || freeze > 0 || LAB || kickoffLock >= 0 || trap.t > 0 || replay) return;
+  if (trap.cd > 0) { toast('트랩 준비 중 (' + trap.cd.toFixed(1) + '초)'); return; }
+  if (!((ball.owner && ball.owner.team === 1) || (!ball.owner && ball.lastTeam === 1 && !ball.dead))) { toast('오프사이드 트랩은 상대가 공을 가졌을 때'); return; }
+  const defs = players.filter(p => p.team === 0 && role(p) === 'df' && !(p.downT > 0));
+  if (!defs.length) return;
+  const line = Math.max(...defs.map(p => p.pos.x));
+  trap.t = 1.6; trap.cd = 3; trap.x = Math.min(line + 9, ball.pos.x - 1); toast('오프사이드 트랩! 라인 올리기');
+  for (const p of defs) if (p !== controlled()) { p.vel.x = Math.max(p.vel.x, 0) + 3.5; p.face = Math.PI / 2; } // 신호와 함께 한 발 먼저 치고 나감
+}
+function updateTrap(dt) {
+  if (trap.cd > 0) trap.cd -= dt;
+  if (trap.t <= 0) return;
+  trap.t -= dt;
+  const presser = players.find(p => p.team === 0 && p.pressRole === 'press'), ctrl = controlled();
+  for (const p of players) if (p.team === 0 && role(p) === 'df' && p !== presser && p !== ctrl && !(p.downT > 0)) { p.target.set(Math.max(p.pos.x, trap.x), 0, p.pos.z); p.speed = 7.8; p.pressRole = 'trap-up'; }
+}
 function pressThink(dt) {
   const o = ball.owner;
   for (const p of players) p.pressRole = null;
@@ -1395,6 +1417,16 @@ function pressThink(dt) {
     const dir = sgn(t);
     if (dir * (p.target.x - ball.pos.x) > 10) { p.target.x = ball.pos.x + dir * 10; p.speed = Math.max(p.speed, 6); p.pressRole = 'compact'; }
   }
+  // 단독 찬스: 공 가진 선수가 우리 진영에 있고 그와 우리 골대 사이 폭 12m 안에 우리 필드 선수가 없으면,
+  // 수비수 전원(압박·슈팅각 막기 중인 선수 제외)이 사이드로 벌리지 않고 페널티박스 안(공 앞 6m, 최소 골대 12m 앞)으로 전력 질주해 공 좌우 4m 간격으로 막아 섬
+  if (bx > 0) {
+    const solo = !players.some(p => p.team === t && !p.gk && s * p.pos.x > bx + .5 && Math.abs(p.pos.z - ball.pos.z) < 6);
+    if (solo) {
+      const defs = players.filter(p => p.team === t && role(p) === 'df' && p.pressRole !== 'press' && p.pressRole !== 'block' && !(p.downT > 0)).sort((a, b) => a.pos.z - b.pos.z);
+      const depth = Math.max(HL - 12, Math.min(HL - 5, bx + 6));
+      defs.forEach((p, i) => { p.target.set(s * depth, 0, clamp(ball.pos.z + (i - (defs.length - 1) / 2) * 4, -14, 14)); p.speed = 7.8; p.charge = true; p.pressRole = 'box'; if (!(p.boostLeft > 0) && !(p.boostCD > 0)) startBoost(p); });
+    }
+  }
   // 수비 속도: 상대가 공을 가진 동안 수비수(2~5번)는 자리 이동도 빠르게(6.5), 압박은 7.5
   for (const p of players) if (p.team === t && !p.gk) { if (role(p) === 'df') p.speed = Math.max(p.speed, 6.5); if (p.pressRole === 'press') p.speed = 7.5; }
 }
@@ -1420,6 +1452,7 @@ function think(dt) {
   // 우리 공일 때 미드필더·공격수는 자기 자리까지 빠르게(초속 7m) 올라감 (앞으로 2m 넘게 가야 할 때)
   if (FAST_UP && ball.owner) for (const p of players) if (p.team === ball.owner.team && p !== ball.owner && !p.gk && p.num >= 6 && sgn(p.team) * (p.target.x - p.pos.x) > 2) p.speed = Math.max(p.speed, 7);
   pressThink(dt); // 전술 압박 (양 팀)
+  updateTrap(dt); // 오프사이드 트랩 (O키)
   for (const t of [0, 1]) gkThink(gkOf(t));
   // 흘러가는 공: 양 팀에서 공 경로에 가장 빨리 닿는 선수를 고름 (패스 받을 선수도 이 선수로 바뀜)
   loose = [null, null];
@@ -1908,6 +1941,7 @@ addEventListener('keydown', e => {
     if (o && o.team === 0 && !o.gk && !ball.setPiece && !ball.inHands && o.pos.x > 17.5) { shoot(o, .75); toast('슈팅!'); return; }
     if (ourBallComing() && ball.pos.x > 10) { queuedPass = { shot: .75, until: performance.now() + 1500 / GAME_SPEED }; toast('논스톱 슈팅 예약'); return; }
   }
+  if (e.code === 'KeyO' && !e.repeat && !edit) offsideTrap(); // O: 오프사이드 트랩
   if (e.code === 'KeyE' && !e.repeat && !edit && freeze <= 0) grabNearest(); // E: 공에 가장 빨리 닿는 우리 선수에게 노란 띠
   if ((e.code === 'KeyZ' || e.code === 'KeyX') && !e.repeat && !edit && freeze <= 0 && !LAB) gkManualDive(e.code === 'KeyZ' ? -1 : 1); // 골키퍼 조작 중 직접 다이빙 (Z 왼쪽, X 오른쪽)
   if (e.code === 'KeyQ' && !edit && freeze <= 0 && ball.owner && ball.owner.team === 0) feintTurn(ball.owner); // 페인팅 턴 (마우스 쪽으로)
@@ -2672,8 +2706,8 @@ function frame(now) {
     passLine.computeLineDistances(); passLine.visible = true;
   } else passLine.visible = false;
   // 우리 팀 공격 중 오프사이드 라인 표시
-  const ol = possTeam() === 0 ? offsideLine(0) : 0;
-  offLine.visible = ol > 0; offLine.position.x = ol;
+  const pt = possTeam(), ol = pt === 0 ? offsideLine(0) : pt === 1 ? -offsideLine(1) : 0; // 상대 공격 땐 우리 쪽 라인 (트랩 타이밍용)
+  offLine.visible = ol !== 0; offLine.position.x = ol;
 
   if (replay) replayCamera(); else if (LAB === 'turn') turnCamera(); else if (LAB === 'shot') labCamera(); else if (LAB === 'gk') glCamera();
   else {
@@ -2879,6 +2913,15 @@ function replayCamera() { // 옆에서 낮게 보는 중계 카메라
   rpFocus.lerp(ball.pos, .08);
   camera.position.set(rpFocus.x * .95, 6.5, rpFocus.z * .45 + 19);
   camera.lookAt(rpFocus.x, 1, rpFocus.z * .8);
+}
+
+// ---------- 파일이 바뀌면 자동 새로고침 (localhost 서버로 열었을 때만) ----------
+// 3초마다 서버에 index.html 수정 시각을 물어, 바뀌었으면 경기가 멈춘 틈(골·아웃·킥오프 대기)에 새로고침. 한창 경기 중이면 멈출 때까지 기다림
+if (location.hostname === 'localhost') {
+  let ver = null, pendingReload = false;
+  const check = () => fetch('/version').then(r => r.text()).then(v => { if (ver === null) ver = v; else if (v !== ver) { ver = v; pendingReload = true; toast('새 버전 — 경기가 멈추면 자동 새로고침'); } }).catch(() => {});
+  setInterval(check, 3000);
+  setInterval(() => { if (pendingReload && !replay && (freeze > 0 || ball.dead || kickoffLock >= 0 || clock < 3)) location.reload(); }, 300);
 }
 </script>
 </body>
