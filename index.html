@@ -1105,8 +1105,12 @@ function controlled() {
   if (ball.recv && ball.recv.team === 0) return ball.recv;
   // 상대가 공을 가진 중: 공보다 우리 골대 쪽에 1.5m 이상 앞서 있는 선수 중, 공과 골대 사이 6m 지점에 가장 가까운 선수
   // (공 뒤에서 쫓는 선수를 고르면 조작해도 막을 수 없음). 한 번 고른 선수는 다른 선수가 3m 넘게 더 가깝기 전엔 유지
-  // (흘러가는 공은 아래 '가장 빨리 닿는 선수' 규칙이 먼저: 공을 흘려보내지 않게 바로 넘김)
-  if (!ball.owner && loose[0] && !ball.dead) return loose[0].p;
+  // 흘러가는 공: 매 프레임 '지금 공에 가장 빨리 닿는 선수'에게 바로 노란 띠 (쫓는 선수 교체 유예 없이). 단, 띠를 가진 선수가 공 4m 안이면 유지
+  if (!ball.owner && !ball.dead) {
+    if (lastCtrl && lastCtrl.team === 0 && !(lastCtrl.downT > 0) && d2(lastCtrl.pos, ball.pos) < 4) return lastCtrl;
+    const f = fastestTo(0); if (f && f.p) return f.p;
+    if (loose[0]) return loose[0].p;
+  }
   const oppAttack = ball.owner && ball.owner.team === 1;
   if (oppAttack) {
     let ahead = players.filter(p => p.team === 0 && !p.gk && p.pos.x < ball.pos.x - 1.5 && !(p.downT > 0));
