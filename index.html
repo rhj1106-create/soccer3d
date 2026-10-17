@@ -476,6 +476,8 @@ function makePlayer(team, num, fx, fz, gk) {
   const p = { team, num, shirt: shirtNo, gk, g, ring: rg, fx, fz, pos: new V(), vel: new V(), target: new V(), speed: 5, face: 0, decide: 1, ...parts, stride: 0, kickAnim: 0, tackleT: 0, downT: 0, tackleDir: new V(), lean: 0 };
   g.rotation.order = 'YXZ';
   p.faceArrow = new THREE.Mesh(faceArrowGeo, faceArrowMat); p.faceArrow.position.y = .035; g.add(p.faceArrow);
+  p.stamBar = new THREE.Group(); const sbBg = new THREE.Mesh(new THREE.BoxGeometry(1, .12, .04), new THREE.MeshBasicMaterial({ color: 0x222222, depthTest: false }));
+  p.stamFill = new THREE.Mesh(new THREE.BoxGeometry(1, .09, .05), new THREE.MeshBasicMaterial({ color: 0x44dd44, depthTest: false })); p.stamBar.add(sbBg, p.stamFill); p.stamBar.position.y = 3.35; p.stamBar.visible = false; p.stamBar.renderOrder = 11; sbBg.renderOrder = 11; p.stamFill.renderOrder = 12; g.add(p.stamBar);
   p.moveArrow = new THREE.Mesh(moveArrowGeo, moveArrowMat); p.moveArrow.visible = false; scene.add(p.moveArrow);
   pick.userData.p = p; pickMeshes.push(pick); players.push(p);
   return p;
@@ -632,9 +634,12 @@ function kick(p, to, mode, pw = .7) {
   ball.owner = null; ball.lastKicker = p; ball.kickT = 0.35; ball.kickFrom = ball.pos.clone(); ball.kickerPos = p.pos.clone(); ball.kickerFace = p.face; ball.deflectT = 0; ball.blockTried = new Set(); ball.lastTeam = p.team; ball.pos.y = mode === 'throw' ? 2.1 : BR;
   // 백패스(자기 골대 쪽으로 22m 안): 클릭이든 오른쪽 클릭이든 낮은 땅볼로, 받는 선수 발에 초속 4m로 약하게 도착
   const backPass = (mode === 'pass' || mode === 'loft') && !p.gk && sgn(p.team) * (to.x - p.pos.x) < -2 && d <= 22;
+  // 센터링 구역(상대 골라인에서 잔디 3칸=22.5m 안, 바깥쪽 1/3 폭)에서 안쪽으로 띄우는 공은 체공 시간 30% 늘려 더 높이 → 앞에 선 상대 머리 위로 넘어감
+  const crossZone = !p.gk && mode !== 'shot' && sgn(p.team) * p.pos.x > HL - 22.5 && Math.abs(p.pos.z) > HW / 3 && Math.abs(to.z) < Math.abs(p.pos.z) - 3;
+  const hiT = crossZone ? 1.3 : 1;
   if (backPass) { ball.vel.copy(dir).multiplyScalar(Math.min(d * K + 4, 24)); ball.vel.y = 0; }
   else if (mode === 'lob') { // 로빙킥: 높이 띄워 수비 머리 위로 넘겨 목표 지점에 부드럽게 떨어뜨림
-    const T = clamp(CFG.lobBase + d * CFG.lobPerM, .9, 2.6); ball.vel.copy(dir).multiplyScalar(dragV0(d, T)); ball.vel.y = 9.8 * T / 2 * 1.08;
+    const T = clamp(CFG.lobBase + d * CFG.lobPerM, .9, 2.6) * hiT; ball.vel.copy(dir).multiplyScalar(dragV0(d, T)); ball.vel.y = 9.8 * T / 2 * 1.08;
   }
   else if (mode === 'throw') { // 머리 위(2.1m)에서 던져 목표 지점에 떨어지게, 최대 22m
     d = Math.min(d, p.gk ? 32 : 22); const T = clamp(d / 13, .4, 1.6);
@@ -647,7 +652,7 @@ function kick(p, to, mode, pw = .7) {
     if (false && mode === 'loft' && role(p) === 'df' && sgn(p.team) * p.pos.x < 0 && sgn(p.team) * (to.x - p.pos.x) > 5 && d > 25) { // (꺼 둠: 너무 높이 떠서 상대가 먼저 도착함 → 일반 롱킥처럼 낮고 빠르게) // 수비수가 자기 진영에서 걷어내기: 높이 솟았다가 끝에서 급격히 떨어짐
       ball.dragMul = CLEAR_DRAG; const T = clamp(d / 13, 1.6, 2.8);
       ball.vel.copy(dir).multiplyScalar(dragV0(d * 1.03, T, AIR * CLEAR_DRAG)); ball.vel.y = 9.8 * T / 2 * CLEAR_LIFT; // 떨어지는 지점이 3% 짧아지는 만큼 보정
-    } else { const T = mode === 'pass' ? clamp(.7 + d / 40, .9, 1.7) : clamp(CFG.loftBase + d * CFG.loftPerM, CFG.loftMin, CFG.loftMax); /* 띄움 킥 체공 시간 (킥 연습 화면 ?lab=kick 에서 조절) */ ball.vel.copy(dir).multiplyScalar(dragV0(d, T)); ball.vel.y = 9.8 * T / 2 * 1.08; } // 띄움 패스(21m 넘는 클릭 패스)는 부드럽게, 오른쪽 클릭 킥은 예전대로
+    } else { const T = (mode === 'pass' ? clamp(.7 + d / 40, .9, 1.7) : clamp(CFG.loftBase + d * CFG.loftPerM, CFG.loftMin, CFG.loftMax)) * hiT; /* 띄움 킥 체공 시간 (킥 연습 화면 ?lab=kick 에서 조절), 센터링 구역이면 1.3배 */ ball.vel.copy(dir).multiplyScalar(dragV0(d, T)); ball.vel.y = 9.8 * T / 2 * 1.08; } // 띄움 패스(21m 넘는 클릭 패스)는 부드럽게, 오른쪽 클릭 킥은 예전대로
   }
   else { // 슈팅: 세기(pw) 0~1.3. 거리에 맞춰 골라인에서 원하는 높이로 들어가게 차 올림, 0.85를 넘기면 하늘로
     // 포지션별: 공격수는 빠르고 낮게(완만한 곡선), 수비수는 느리고 높게
@@ -943,7 +948,7 @@ function updateBall(dt) {
     }
   }
   // 태클 (몸 날려 잡고 균형 잡는 중인 선수는 보호 시간 없이 85% 확률로 빼앗김)
-  const wobbly = DIVE_CATCH && ball.owner && ball.owner.balanceT > 0 && !ball.setPiece && !ball.inHands && kickoffLock < 0; // 몸 날려 잡기를 끈 지금은 쓰지 않음
+  const wobbly = ball.owner && ((DIVE_CATCH && ball.owner.balanceT > 0) || ball.owner.stam < .2) && !ball.setPiece && !ball.inHands && kickoffLock < 0; // 체력이 바닥난(20% 아래) 선수는 붙자마자 85% 확률로 빼앗김
   if (ball.owner && (ball.stealT <= 0 || wobbly)) {
     for (const p of players) {
       if (p.team === ball.owner.team || p.tackleCD > 0) continue;
@@ -1387,6 +1392,25 @@ function updateTrap(dt) {
   const presser = players.find(p => p.team === 0 && p.pressRole === 'press'), ctrl = controlled();
   for (const p of players) if (p.team === 0 && role(p) === 'df' && p !== presser && p !== ctrl && !(p.downT > 0)) { p.target.set(Math.max(p.pos.x, trap.x), 0, p.pos.z); p.speed = 7.8; p.pressRole = 'trap-up'; }
 }
+// 공 가진 선수가 상대를 한 명 제칠 때마다(진행 방향 앞 3m 안에 있던 상대가 뒤로 넘어감) 체력 0.3 소모 → 세 명 넘게 제치면 바닥나 패스하지 않으면 쉽게 뺏김
+function updateBeats(dt) {
+  const o = ball.owner;
+  for (const p of players) if (p !== o) p.beatMap = null;
+  if (!o || o.gk) return;
+  if (!o.beatMap) { o.beatMap = new Map(); o.beats = 0; }
+  const v = Math.hypot(o.vel.x, o.vel.z); if (v < 1.5) return;
+  const ux = o.vel.x / v, uz = o.vel.z / v;
+  for (const q of players) {
+    if (q.team === o.team || q.gk) continue;
+    const dx = q.pos.x - o.pos.x, dz = q.pos.z - o.pos.z, d = Math.hypot(dx, dz), along = dx * ux + dz * uz;
+    const was = o.beatMap.get(q);
+    if (d < 3.5 && along > .3) o.beatMap.set(q, 'ahead');
+    else if (was === 'ahead' && along < -.6 && d < 4) {
+      o.beatMap.set(q, 'passed'); o.beats++; o.stam = clamp((o.stam === undefined ? 1 : o.stam) - .3, 0, 1);
+      if (o.team === 0) toast(o.shirt + '번 ' + o.beats + '명 제침 — 체력 ' + Math.round(o.stam * 100) + '%' + (o.stam < .2 ? ' (바닥! 패스하세요)' : ''));
+    } else if (d > 5) o.beatMap.delete(q);
+  }
+}
 function pressThink(dt) {
   const o = ball.owner;
   for (const p of players) p.pressRole = null;
@@ -1479,6 +1503,7 @@ function think(dt) {
   if (FAST_UP && ball.owner) for (const p of players) if (p.team === ball.owner.team && p !== ball.owner && !p.gk && p.num >= 6 && sgn(p.team) * (p.target.x - p.pos.x) > 2) p.speed = Math.max(p.speed, 7);
   pressThink(dt); // 전술 압박 (양 팀)
   updateTrap(dt); // 오프사이드 트랩 (O키)
+  updateBeats(dt); // 드리블로 상대 제치기 → 체력 소모
   for (const t of [0, 1]) gkThink(gkOf(t));
   // 흘러가는 공: 양 팀에서 공 경로에 가장 빨리 닿는 선수를 고름 (패스 받을 선수도 이 선수로 바뀜)
   loose = [null, null];
@@ -1669,7 +1694,10 @@ function movePlayers(dt) {
     const dx = p.target.x - p.pos.x, dz = p.target.z - p.pos.z, d = Math.hypot(dx, dz);
     // 전력 질주(빠른 속도·먼 거리)·드리블·태클은 뛰는 방향을 보고, 그 외에는 공을 보며 뒤·옆으로 이동
     const sprint = p === ball.owner || p.tackleT > 0 || p.speed >= 7 || d > 12;
-    let maxSp = p.speed;
+    // 체력(0~1): 전력 질주(6.5m/s 넘게)나 공 몰고 달리기(4m/s 넘게)면 줄고, 천천히(3m/s 아래) 움직이면 회복. 절반 아래로 떨어지면 최고 속도가 줄어 바닥나면 60%
+    if (p.stam === undefined) p.stam = 1;
+    { const v = Math.hypot(p.vel.x, p.vel.z); if (v > 6.5) p.stam -= dt * .045; else if (p === ball.owner && v > 4) p.stam -= dt * .06; else if (v < 3) p.stam += dt * .05; p.stam = clamp(p.stam, 0, 1); }
+    let maxSp = p.speed * (p.stam < .5 ? .6 + .8 * p.stam : 1);
     if (p.boostCD > 0) p.boostCD -= dt;
     if (p.jumpCD > 0) p.jumpCD -= dt;
     if (p.jumpUp > 0) p.jumpUp -= dt;
@@ -2656,6 +2684,11 @@ function frame(now) {
     const reachLean = p.lungeT > 0 || p.stretchT > 0 ? .35 : 0;
     p.lean += ((p.diveT > 0 ? 0 : p.kickAnim > 0 ? (p.kickLean || 0) : slide ? .15 : recov ? .45 * (1 - upK) : p.trapT > 0 ? -.4 : clamp(fw / 7, -1, 1) * .12 + accLean + reachLean) - p.lean) * Math.min(1, dt * (p.kickShot && p.kickAnim > 0 ? 30 : 12));
     p.g.rotation.x = p.lean;
+    if (p.stamBar) { // 체력 바 (머리 위, 카메라 쪽을 보게)
+      const st = p.stam === undefined ? 1 : p.stam, v = Math.hypot(p.vel.x, p.vel.z);
+      p.stamBar.visible = st < .97 && (p === ball.owner || p === ctrl || v > 6);
+      if (p.stamBar.visible) { p.stamBar.rotation.y = -p.face; p.stamBar.rotation.x = -p.lean; p.stamFill.scale.x = Math.max(.02, st); p.stamFill.position.x = -(1 - st) / 2; p.stamFill.material.color.setHex(st > .5 ? 0x44dd44 : st > .25 ? 0xffcc00 : 0xff3333); }
+    }
     // 점프 헤딩: 0.8m 뛰어올랐다 내려옴, 두 팔은 위로
     if (p.jumpT > 0) {
       p.jumpT -= dt; p.g.position.y = Math.sin(Math.max(0, p.jumpT) / (p.jumpLen || .5) * Math.PI) * .8;
