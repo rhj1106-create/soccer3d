@@ -520,6 +520,7 @@ offLine.rotation.x = -Math.PI / 2; offLine.position.y = .025; offLine.visible = 
 
 // ---------- 상태 ----------
 const score = [0, 0];
+let kickoffHintT = 0; // 킥오프 안내 자막은 한 번만
 let freeze = 0, pendingKickoff = -1, userMove = null, lastCtrl = null, hovered = null, zoom = 1, clock = 0;
 const keys = {};
 const $ = id => document.getElementById(id);
@@ -689,6 +690,7 @@ function shoot(p, pw = .6 + Math.random() * .25) {
   if (LAB && !TRAIN) labStart(p, pw);
 }
 function placeForKickoff(team) {
+  kickoffHintT = 0;
   for (const p of players) {
     const s = sgn(p.team);
     p.pos.set(s * Math.min(p.fx, -1), 0, s * p.fz); p.vel.set(0, 0, 0); p.face = s > 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -1528,6 +1530,7 @@ function think(dt) {
   updateFeints(dt); // 페인팅 턴 진행 (속이는 동작 → 턴)
   // 킥오프 전: 공을 찰 때까지 전원 제자리
   if (kickoffLock >= 0) for (const p of players) { p.target.copy(p.pos); p.speed = 0; }
+  if (kickoffLock >= 0 && userMove && !kickoffHintT) { kickoffHintT = 1; toast(kickoffLock === 0 ? '킥오프: 팀원(파란 선수)을 클릭해 패스하면 경기 시작' : '상대 킥오프 — 상대가 차면 움직일 수 있어요'); } // 킥오프 때 잔디를 클릭하면 안내
   marker.visible = !!userMove; if (userMove) marker.position.set(userMove.x, .03, userMove.z);
   return ctrl;
 }
