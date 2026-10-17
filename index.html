@@ -1949,7 +1949,7 @@ function rightLong(held) {
   const ang = Math.atan2(lastGround.x - own.pos.x, lastGround.z - own.pos.z);
   // 센터링: 센터링 구역(상대 골라인 3칸 안, 바깥 1/3 폭)에서 안쪽(박스 쪽)을 가리키고 길게 누르면 누른 시간과 상관없이 마우스가 가리킨 지점으로 높이 띄워 넘김
   const s = sgn(own.team), inZone = !own.gk && s * own.pos.x > HL - 22.5 && Math.abs(own.pos.z) > HW / 3 && Math.abs(lastGround.z) < Math.abs(own.pos.z) - 3;
-  if (inZone) { rkKick(own, lastGround.clone(), 'loft'); toast('센터링!'); return; }
+  if (inZone) { rkKick(own, lastGround.clone(), 'lob'); toast('센터링!'); return; } // 로빙으로 높이 (앞 수비 머리 위로)
   rkKick(own, new V(own.pos.x + Math.sin(ang) * dist, 0, own.pos.z + Math.cos(ang) * dist), 'loft');
 }
 // 로빙킥(미들킥): 더블클릭한 지점으로 높이 띄워 부드럽게
