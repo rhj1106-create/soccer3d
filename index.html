@@ -2929,6 +2929,13 @@ if (location.hostname === 'localhost') {
   setInterval(check, 3000);
   setInterval(() => { if (pendingReload && !replay && (freeze > 0 || ball.dead || kickoffLock >= 0 || clock < 3)) location.reload(); }, 300);
 }
+
+// ---------- 클릭 진단: 경기장(캔버스)이 아닌 것이 클릭을 받으면 무엇인지 자막으로 알림 (노트북에서 클릭이 안 먹는 문제 찾기용) ----------
+addEventListener('mousedown', e => {
+  const t = e.target; if (!t || t === renderer.domElement) return;
+  if (t.closest && (t.closest('#speed') || t.closest('#help') || t.closest('#train') || t.closest('#editPanel') || t.closest('#editBtn') || t.closest('#lab') || t.closest('#mini'))) return;
+  toast('클릭이 경기장 대신 <' + t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') + (t.className && typeof t.className === 'string' ? '.' + t.className.split(' ')[0] : '') + '>에 닿음 — 알려 주세요');
+}, true);
 </script>
 </body>
 </html>
