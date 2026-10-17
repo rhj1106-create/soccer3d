@@ -1132,7 +1132,8 @@ function gkThink(p) {
       if (t > 0 && t < 1.2) {
         if (p.guess === undefined || p.guessShot !== ball.kickFrom) { p.guessShot = ball.kickFrom; p.guess = (Math.random() * 2 - 1) * 1.5 * clamp(1 - t / .9, 0, 1); }
         const pz = ball.pos.z + ball.vel.z * t + p.guess, py = ball.pos.y + ball.vel.y * t - 4.9 * t * t, side = pz - p.pos.z;
-        if (Math.abs(side) > .5 && Math.abs(side) < 5 && Math.abs(pz) < GW + .8 && py < 2.7) {
+        const tl = (gx - ball.pos.x) / ball.vel.x, pzLine = ball.pos.z + ball.vel.z * tl + p.guess; // 골라인을 지날 때의 좌우 위치 (비스듬한 슈팅은 골키퍼 앞에선 바깥이어도 골라인에선 안쪽일 수 있음)
+        if (Math.abs(side) > .5 && Math.abs(side) < 6 && (Math.abs(pz) < GW + .8 || Math.abs(pzLine) < GW + .3) && py < 2.7) {
           const lx = (ball.pos.x - p.pos.x) * Math.cos(p.face) - side * Math.sin(p.face);
           p.diveDir = -Math.sign(lx) || 1; p.diveT = .9; p.diveFrom = p.pos.clone();
           p.diveVel = new V(0, 0, clamp(side / Math.max(t, .2), -5.5, 5.5)); // 다이빙은 최대 초속 5.5m
