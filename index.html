@@ -1503,6 +1503,20 @@ function think(dt) {
   for (const p of players) { p.target.copy(formTarget(p)); p.speed = coverRole.has(p) ? 7 : 5.2; p.charge = false; } // 수비 자리를 대신 채우는 선수는 빠르게
   findSpace(dt);
   keepSpacing();
+  // 공 가진 선수가 옆으로 방향을 잡으면(초속 2m 넘게 옆으로) 근처(25m 안) 팀원 셋이 반대로 움직임 (양 팀):
+  //  사이드로 파고들면 → 팀원은 상대 골대 쪽(공보다 14m 앞, 가운데)으로 달려 들어감 / 가운데로 들어가면 → 팀원은 양 사이드(터치라인 6m 안)로 벌려 달림
+  if (ball.owner && !ball.owner.gk && !ball.setPiece && !ball.inHands && kickoffLock < 0) {
+    const o = ball.owner, s = sgn(o.team), bx = s * o.pos.x, vz = o.vel.z, outward = Math.sign(vz) === Math.sign(o.pos.z || 1);
+    if (Math.abs(vz) > 2 && bx > -5) {
+      const mates = players.filter(q => q.team === o.team && q !== o && !q.gk && d2(q.pos, o.pos) < 25 && !(q.downT > 0)).sort((a, b) => d2(a.pos, o.pos) - d2(b.pos, o.pos)).slice(0, 3);
+      mates.forEach((q, i) => {
+        let tx, tz;
+        if (outward) { tx = Math.min(bx + 14, HL - 7); tz = clamp(o.pos.z * .3, -8, 8) + (i - 1) * 6; } // 골대 쪽으로
+        else { tx = Math.min(bx + 8 + (i === 2 ? 6 : 0), HL - 6); tz = i === 2 ? 0 : (i === 0 ? 1 : -1) * Math.sign(o.pos.z || 1) * (HW - 6); } // 양 사이드로
+        q.target.copy(onside(q, new V(s * tx, 0, tz))); q.speed = 7.2; q.sideRun = true;
+      });
+    }
+  }
   // 우리 공일 때 미드필더·공격수는 자기 자리까지 빠르게(초속 7m) 올라감 (앞으로 2m 넘게 가야 할 때)
   if (FAST_UP && ball.owner) for (const p of players) if (p.team === ball.owner.team && p !== ball.owner && !p.gk && p.num >= 6 && sgn(p.team) * (p.target.x - p.pos.x) > 2) p.speed = Math.max(p.speed, 7);
   pressThink(dt); // 전술 압박 (양 팀)
