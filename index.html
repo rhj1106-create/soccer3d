@@ -1045,11 +1045,25 @@ function nearestTo(team, pt, n, allowGk) {
 // 공이 굴러갈 길을 0.1초 단위로 따라가며, 선수가 그 자리에 공보다 먼저(또는 같이) 도착하는 가장 이른 지점
 let loose = [null, null], manualCtrl = null, lastGround = null; // lastGround: 마우스가 가리키는 잔디 지점 (페인팅 턴 방향)
 const chaser = [null, null]; // 팀별로 흘러가는 공을 쫓고 있는 선수
-function intercept(p, speed) {
+// 공이 x = X 선을 dir 방향(+1/-1)으로 지나갈 때의 위치·시간 예측 (4초 안, 공기 저항·바운드 포함). 안 지나면 null
+function ballCrossX(X, dir) {
+  const pos = ball.pos.clone(); let vx = ball.vel.x, vz = ball.vel.z, vy = ball.vel.y;
+  const step = .05;
+  if (dir * (pos.x - X) <= 0) return null;
+  for (let t = 0; t <= 4; t += step) {
+    if (pos.y > BR + .02) { const f = 1 / (1 + AIR * (ball.dragMul || 1) * Math.hypot(vx, vy, vz) * step); vx *= f; vy *= f; vz *= f; }
+    pos.x += vx * step; pos.z += vz * step; vy -= 9.8 * step; pos.y += vy * step;
+    if (pos.y <= BR) { pos.y = BR; vy = vy < -1.5 ? -vy * .45 : 0; if (!vy) { const f = Math.exp(-K * step); vx *= f; vz *= f; } }
+    if (dir * (pos.x - X) <= 0) return { z: pos.z, y: pos.y, t };
+    if (Math.hypot(vx, vz) < .3) return null;
+  }
+  return null;
+}
+function intercept(p, speed, maxY = 2.9) {
   const pos = ball.pos.clone(); let vx = ball.vel.x, vz = ball.vel.z, vy = ball.vel.y;
   const step = .1;
   for (let t = 0; t <= 4; t += step) {
-    if (pos.y < 2.9 && d2(p.pos, pos) / speed + turnPenalty(p, pos) <= t + .1) return { p, t, pt: pos.clone().setY(0) };
+    if (pos.y < maxY && d2(p.pos, pos) / speed + turnPenalty(p, pos) <= t + .1) return { p, t, pt: pos.clone().setY(0) };
     if (pos.y > BR + .02) { const f = 1 / (1 + AIR * (ball.dragMul || 1) * Math.hypot(vx, vy, vz) * step); vx *= f; vy *= f; vz *= f; } // 공기 저항
     pos.x += vx * step; pos.z += vz * step; vy -= 9.8 * step; pos.y += vy * step;
     if (pos.y <= BR) { pos.y = BR; vy = vy < -1.5 ? -vy * .45 : 0; if (!vy) { const f = Math.exp(-K * step); vx *= f; vz *= f; } }
@@ -1116,7 +1130,16 @@ function gkThink(p) {
   //  ① 팀원이 골키퍼에게 준 패스(백패스)  ② 우리 팀이 흘린 공이 골대 쪽 20m 안으로 오고 팀원보다 먼저 닿음  ③ 상대가 찬 공(슈팅 제외)이 박스 안으로 오고 상대보다 먼저 닿음
   if (ball.owner) p.rush = false;
   if (!ball.owner && !ball.dead) {
-    const mine = intercept(p, 7.5);
+    const mine = intercept(p, 7.5, 2.2); // 손을 뻗어 잡을 수 있는 높이(2.2m)까지만 → 머리 위로 넘어갈 공을 쫓아 나가지 않음
+    // 상대가 걷어낸·띄운 공이 슈팅이 아니어도 우리 골문 안으로 날아오면: 뛰어나가지 않고 골라인 1.2m 앞, 공이 지나갈 자리로 가서 막음(높으면 점프)
+    if (ball.lastTeam !== p.team && !ball.isShot) {
+      const gb = ballCrossX(gx + s * 1.2, -s);
+      if (gb && Math.abs(gb.z) < GW + 1.2 && gb.y < GH + .4) {
+        p.rush = false; p.target.set(gx + s * 1.2, 0, clamp(gb.z, -GW - .5, GW + .5)); p.speed = 7.5;
+        if (gb.y > 1.5 && gb.t < .5 && d2(p.pos, p.target) < 1.5) jumpUp(p);
+        return;
+      }
+    }
     if (!p.rush && !ball.isShot) {
       if (ball.recv === p) p.rush = true;
       else if (ball.lastTeam === p.team && !(ball.recv && ball.recv !== p && d2(ball.recv.pos, ball.pos) < 6)) {
