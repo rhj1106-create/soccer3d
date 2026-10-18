@@ -12,7 +12,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a10;font-family:'M
 #help.hide{display:none}
 #help .ht{font-size:17px;font-weight:bold;margin-bottom:8px;display:flex;align-items:center;gap:10px}
 #help .ht span{font-size:12px;font-weight:normal;opacity:.7;flex:1}
-#help .ht button,#helpBtn,#fsBtn,#lowBtn{font-family:inherit;font-size:12px;padding:3px 10px;border:0;border-radius:6px;background:#1e88e5;color:#fff;cursor:pointer}
+#help .ht button,#helpBtn,#fsBtn,#lowBtn,#stepBtn{font-family:inherit;font-size:12px;padding:3px 10px;border:0;border-radius:6px;background:#1e88e5;color:#fff;cursor:pointer}
 #help .hc{display:grid;grid-template-columns:repeat(3,1fr);gap:0 22px}
 #help h4{margin:4px 0 2px;font-size:14px;color:#ffd54f}
 #help b{color:#9be7ff}
@@ -66,7 +66,7 @@ b{color:#ffe14d}
 <div id="gauge"><div id="gaugeFill"></div><div id="gaugeMark"></div></div>
 <div id="bal">균형 잡는 중</div>
 <div id="boost"></div>
-<div id="speed">속도 <button data-v="0.5">0.5×</button><button data-v="0.75">0.75×</button><button data-v="1">1×</button> <button id="sndBtn" title="소리 켜기/끄기">🔊</button> <button id="helpBtn">조작법</button> <button id="trainBtn">훈련</button> <button id="fsBtn" title="주소창 없이 전체화면 (Esc로 나감)">전체화면</button> <button id="lowBtn" title="관중·그림자를 꺼서 느린 PC에서 부드럽게">저사양</button></div>
+<div id="speed">속도 <button data-v="0.5">0.5×</button><button data-v="0.75">0.75×</button><button data-v="1">1×</button> <button id="sndBtn" title="소리 켜기/끄기">🔊</button> <button id="helpBtn">조작법</button> <button id="trainBtn">훈련</button> <button id="fsBtn" title="주소창 없이 전체화면 (Esc로 나감)">전체화면</button> <button id="lowBtn" title="관중·그림자를 꺼서 느린 PC에서 부드럽게">저사양</button> <button id="stepBtn" title="패스·받기마다 멈추고 모두의 움직임을 화살표로 (스페이스: 다음 장면)">한 컷씩</button></div>
 <div id="train" class="hide">
 <div class="ht">훈련 모드 <span>단계별로 연습한 뒤 실전 경기로</span><button id="trainClose">닫기 ✕</button></div>
 <a href="?lab=train"><b>1단계 · 패스 / 킥 / 슈팅</b><span>실제 11대11이지만 상대는 수비만 하고, 공을 뺏기면 바로 돌려줍니다. 패스·킥·슈팅을 마음껏 해 보세요.</span></a>
@@ -112,6 +112,7 @@ b{color:#ffe14d}
 <div><h4>5단계 · 화면</h4>
 <b>휠</b> 확대 · 축소 (공 없을 때)<br>
 <b>V</b> 방향 화살표 &nbsp; <b>M</b> 미니맵<br>
+<b>한 컷씩</b>(버튼) 패스·받기마다 멈추고 모두의 움직임을 화살표로 — 스페이스 다음 장면, → 0.5초, 멈춘 채 패스 지시 가능, 우리 선수 화살표 끝을 끌어 놓으면 그리로 달림<br>
 <b>P</b> 경기 멈춤/재개 &nbsp; <b>R</b> 리플레이 (최근 8초, 골 뒤엔 자동, 멈춘 상태에서도) — 리플레이 중 ←→ 3초 이동(60초까지), 스페이스 멈춤, ↑↓ 속도<br>
 <b>H</b> 이 설명 열기/닫기<br>
 <b>속도 0.5× / 0.75× / 1×</b> 게임 속도 &nbsp; <b>전체화면</b> 주소창 없이 (Esc로 나감) &nbsp; <b>저사양</b> 관중·그림자 끄기 (노트북)<br>
@@ -530,6 +531,7 @@ offLine.rotation.x = -Math.PI / 2; offLine.position.y = .025; offLine.visible = 
 // ---------- 상태 ----------
 const score = [0, 0];
 let kickoffHintT = 0; // 킥오프 안내 자막은 한 번만
+let stepMode = false, stepArm = true, stepUntil = -1; // 한 컷씩 전술 모드 (코드는 맨 아래)
 let freeze = 0, pendingKickoff = -1, userMove = null, lastCtrl = null, hovered = null, zoom = 1, clock = 0;
 const keys = {};
 const $ = id => document.getElementById(id);
@@ -554,6 +556,7 @@ function plog(type, info) {
   if (location.hostname === "localhost") fetch("/log", { method: "POST", body: JSON.stringify(e), keepalive: true }).catch(() => {}); // 사무실 PC 서버에서 열었을 때만 passlog.txt에 저장 (밖에 올린 판은 안 보냄)
 }
 function give(p) {
+  if (ball.owner !== p) stepEvent((p.team === 0 ? '우리 ' : '상대 ') + p.shirt + '번 공 잡음');
   p.recvAt = performance.now(); // 받은 순간 (논스톱 슈팅 타이밍)
   p.fromRebound = !ball.owner && !!ball.lastKicker && ball.lastKicker.gk && ball.lastKicker.team !== p.team; // 골키퍼가 쳐낸 공을 받음
   for (const q of players) q.letRun = false; // 공을 누가 잡든 흘리며 턴 예약은 끝남
@@ -636,6 +639,7 @@ function kick(p, to, mode, pw = .7) {
   // 차는 순간 오프사이드 위치의 팀원 기록 (스로인·코너킥·골킥 직후, 슈팅은 제외)
   ball.offside = mode !== 'shot' && !ball.noOffside ? new Set(players.filter(q => q.team === p.team && q !== p && isOffside(q))) : null;
   ball.noOffside = false;
+  stepEvent((p.team === 0 ? '우리 ' : '상대 ') + p.shirt + '번 ' + (mode === 'shot' ? '슈팅' : mode === 'throw' ? '스로인' : '패스'));
   const dir = new V(to.x - ball.pos.x, 0, to.z - ball.pos.z);
   let d = dir.length(); dir.normalize();
   ball.owner = null; ball.lastKicker = p; ball.kickT = 0.35; ball.kickFrom = ball.pos.clone(); ball.kickerPos = p.pos.clone(); ball.kickerFace = p.face; ball.deflectT = 0; ball.blockTried = new Set(); ball.lastTeam = p.team; ball.pos.y = mode === 'throw' ? 2.1 : BR;
@@ -1610,6 +1614,8 @@ function think(dt) {
   // 스로인·코너킥 중에는 공 가진 선수가 움직이지 못함 (드리블 금지)
   if ((ball.setPiece || ball.inHands) && ball.owner) { ball.owner.target.copy(ball.owner.pos); ball.owner.speed = 0; }
   updateFeints(dt); // 페인팅 턴 진행 (속이는 동작 → 턴)
+  // 한 컷씩 모드에서 사용자가 끌어 놓은 지점이 있는 우리 선수는 그리로 달림 (도착하면 해제, 공을 뺏기면 모두 해제)
+  for (const p of players) if (p.plan) { if (p.team !== 0 || (ball.owner && ball.owner.team === 1) || d2(p.pos, p.plan) < .7 || p === ball.owner) p.plan = null; else { p.target.copy(onside(p, p.plan.clone())); p.speed = 7; } }
   // 킥오프 전: 공을 찰 때까지 전원 제자리
   if (kickoffLock >= 0) for (const p of players) { p.target.copy(p.pos); p.speed = 0; }
   if (kickoffLock >= 0 && userMove && !kickoffHintT) { kickoffHintT = 1; toast(kickoffLock === 0 ? '킥오프: 팀원(파란 선수)을 클릭해 패스하면 경기 시작' : '상대 킥오프 — 상대가 차면 움직일 수 있어요'); } // 킥오프 때 잔디를 클릭하면 안내
@@ -1878,7 +1884,8 @@ let pendingClick = null, pendingEv = null, lastLeftIncoming = null;
 let leftClicks = [];
 renderer.domElement.addEventListener('mousedown', e => {
   if (replay) { endReplay(); return; } // 리플레이 건너뛰기
-  if (paused) return; // 일시정지 중엔 조작 안 됨
+  if (paused && !stepMode) return; // 일시정지 중엔 조작 안 됨 (한 컷씩 모드에선 멈춘 채 지시 가능)
+  if (paused && stepMode && e.button === 0 && stepPick(e)) return; // 우리 선수 화살표 끌기 시작
   if (!edit && e.button === 0 && freeze <= 0) { const now = performance.now(); leftClicks = leftClicks.filter(t => now - t < 700); leftClicks.push(now); if (leftClicks.length >= 3) { leftClicks = []; boostSmart(); } }
   if (edit) return;
   // 오른쪽 버튼 킥 (우리 선수가 공을 가졌을 때): 누르고 있다가 떼기 = 롱킥(누른 시간 = 거리), 더블클릭 = 로빙킥(두 번째 클릭 지점)
@@ -2030,6 +2037,7 @@ addEventListener('keydown', e => {
   if (replay) { if (e.code.startsWith('Arrow') || e.code === 'Space') { e.preventDefault(); replayKey(e.code); } else if (!e.repeat) endReplay(); return; } // 리플레이 조작 / 건너뛰기
   if (e.code === 'KeyP' && !e.repeat && !edit && !LAB) { paused = !paused; $('pauseTag').style.display = paused ? 'block' : 'none'; return; } // P: 경기 멈춤/재개 (멈춘 채 R로 리플레이 가능)
   if (e.code === 'KeyR' && !e.repeat && !edit && !LAB) { startReplay(8); return; } // R: 최근 8초 리플레이
+  if (paused && stepMode && (e.code === 'Space' || e.code === 'ArrowRight')) { e.preventDefault(); if (!e.repeat) stepGo(e.code === 'ArrowRight' ? .5 : 0); return; }
   if (paused && e.code !== 'KeyH') return;
   if (e.code === 'KeyT') tackle();
   // 슈팅 찬스(상대 진영 앞쪽 3분의 1)에서는 S·F도 슈팅: 공을 가졌으면 바로 보통 세기로, 우리 공이 그쪽으로 오는 중이면 받는 순간 논스톱 슈팅
@@ -2632,8 +2640,9 @@ function glCamera() { // 골문 뒤 약간 위에서 경기장 쪽을 봄 (골�
 }
 // ---------- 루프 ----------
 let GAME_SPEED = +(localStorage.getItem("soccerSpeed") || 1); // 전체 게임 속도 (1 = 원래 속도) — 화면 왼쪽 위 버튼으로 바꾸고 저장됨
-function setSpeed(v) { GAME_SPEED = v; try { localStorage.setItem("soccerSpeed", v); } catch (e) {} for (const b of document.querySelectorAll("#speed button")) b.classList.toggle("on", +b.dataset.v === v); }
-setSpeed(GAME_SPEED); for (const b of document.querySelectorAll("#speed button")) b.onclick = e => { setSpeed(+b.dataset.v); e.target.blur(); };
+if (!(GAME_SPEED > 0 && GAME_SPEED <= 2)) GAME_SPEED = 1; // 저장값이 깨졌으면(NaN 등) 1배로 (속도가 NaN이면 경기가 멈추고 클릭이 안 먹음)
+function setSpeed(v) { if (!(v > 0 && v <= 2)) return; GAME_SPEED = v; try { localStorage.setItem("soccerSpeed", v); } catch (e) {} for (const b of document.querySelectorAll("#speed button")) b.classList.toggle("on", +b.dataset.v === v); }
+setSpeed(GAME_SPEED); for (const b of document.querySelectorAll("#speed button[data-v]")) b.onclick = e => { setSpeed(+b.dataset.v); e.target.blur(); }; // 속도 숫자 버튼에만 (다른 버튼에 걸리면 속도가 NaN이 되어 경기가 멈춤)
 const focus = new V();
 let last = performance.now();
 placeForKickoff(0);
@@ -2663,7 +2672,8 @@ function frame(now) {
     return requestAnimationFrame(frame);
   }
   if (replay) replayStep(dt); // 리플레이 중엔 경기 정지
-  else if (paused) {} // 일시정지(P): 아무것도 진행하지 않음
+  else if (paused) { if (stepMode) updateStepArrows(); } // 일시정지(P): 아무것도 진행하지 않음 (한 컷씩 모드면 화살표 표시)
+  else if (stepMode && stepUntil >= 0 && clock >= stepUntil) { stepUntil = -1; stepPause('0.5초 뒤'); }
   else if (freeze > 0 && !ISO_LAB) {
     freeze -= dt;
     if (freeze <= 0 && pendingKickoff >= 0) { $('msg').style.display = 'none'; const t = pendingKickoff; pendingKickoff = -1; placeForKickoff(t); }
@@ -3073,6 +3083,34 @@ function setLowGfx(on) {
 }
 $('lowBtn').onclick = e => { e.stopPropagation(); setLowGfx(!lowGfx); };
 try { if (localStorage.getItem('soccerLow') === '1') setLowGfx(true); } catch (e) {}
+
+// ---------- 한 컷씩 전술 모드 ----------
+// 켜 두면 킥(패스·슈팅)과 공을 잡는 순간마다 경기가 멈추고, 우리 선수 전원이 가려는 곳(파란 화살표)과 상대의 예상 움직임(빨간 화살표)을 보여 줌.
+// 멈춘 채로도 패스·이동 지시 가능. 스페이스 = 다음 장면까지 진행, → = 0.5초만 진행, P = 멈춤 해제하고 계속
+const stepArrows = players.map(p => { const a = new THREE.ArrowHelper(new V(1, 0, 0), new V(), 1, p.team === 0 ? 0x1d4fa8 : 0xc62828, .9, .5); a.visible = false; a.line.material.depthTest = false; a.cone.material.depthTest = false; a.renderOrder = 9; scene.add(a); return a; });
+function updateStepArrows() {
+  players.forEach((p, i) => { const a = stepArrows[i]; const dx = p.target.x - p.pos.x, dz = p.target.z - p.pos.z, len = Math.hypot(dx, dz); if (len < .6 || p.gk) { a.visible = false; return; } a.visible = true; a.position.set(p.pos.x, .15, p.pos.z); a.setDirection(new V(dx / len, 0, dz / len)); a.setLength(Math.min(len, 14), .9, .5); });
+}
+function hideStepArrows() { for (const a of stepArrows) a.visible = false; }
+function stepPause(label) {
+  if (!stepMode || paused || replay || freeze > 0 || kickoffLock >= 0 || ball.dead || edit) return;
+  paused = true; $('pauseTag').textContent = '⏸ ' + label + ' — 스페이스: 다음 장면 · →: 0.5초 · P: 계속 진행'; $('pauseTag').style.display = 'block'; updateStepArrows();
+}
+function stepEvent(label) { if (stepMode && stepArm) stepPause(label); }
+function stepGo(sec) { paused = false; $('pauseTag').style.display = 'none'; hideStepArrows(); stepUntil = sec > 0 ? clock + sec : -1; stepArm = true; }
+$('stepBtn').onclick = e => { e.stopPropagation(); stepMode = !stepMode; $('stepBtn').classList.toggle('on', stepMode); if (!stepMode && paused) { paused = false; $('pauseTag').style.display = 'none'; hideStepArrows(); } toast(stepMode ? '한 컷씩 모드: 패스·받기마다 멈춥니다 (스페이스로 다음 장면)' : '한 컷씩 모드 끔'); };
+
+// 한 컷씩 모드: 멈춘 상태에서 우리 선수의 화살표 끝(1.5m 안) 또는 선수(1m 안)를 잡아 끌어 놓으면 그 지점으로 달리게 함
+let stepDrag = null;
+function stepPick(e) {
+  setMouse(e); const g = groundPt(); if (!g) return false;
+  let best = null, bd = 1.5;
+  for (const p of players) { if (p.team !== 0 || p.gk) continue; const dTip = d2(g, p.target), dBody = d2(g, p.pos); const d = Math.min(dTip, dBody + .5); if (d < bd) { bd = d; best = p; } }
+  if (!best) return false;
+  stepDrag = best; best.plan = g.clone(); best.target.copy(g); updateStepArrows(); return true;
+}
+addEventListener('mousemove', e => { if (!stepDrag) return; setMouse(e); const g = groundPt(); if (g) { stepDrag.plan = g.clone(); stepDrag.target.copy(g); updateStepArrows(); } });
+addEventListener('mouseup', () => { if (stepDrag) { toast(stepDrag.shirt + '번: 여기로 달리기'); stepDrag = null; } });
 </script>
 </body>
 </html>
