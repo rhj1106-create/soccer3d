@@ -104,7 +104,7 @@ b{color:#ffe14d}
 <b>S · F</b> (골문 근처) 논스톱 슈팅<br>
 <b>W</b> 점프 (높은 공)<br><br>
 <h4>4단계 · 수비 / 골키퍼</h4>
-<b>스페이스</b> 태클 (공이 떠 있으면 점프) &nbsp; <b>T</b> 태클<br>
+<b>스페이스</b> 상대가 공을 가진 채/잡으려 1.8m 안에 있으면 몸싸움(어깨 밀기), 아니면 태클, 공이 떠 있으면 점프 &nbsp; <b>T</b> 태클<br>
 <b>E</b> 공에 가장 빨리 닿는 우리 선수로 바꾸기<br>
 <b>왼쪽+오른쪽 동시</b> (공 없을 때) 커서 근처 선수 선택<br>
 <b>Z · X</b> 골키퍼 조작 중 왼쪽·오른쪽 다이빙<br>
@@ -974,6 +974,7 @@ function updateBall(dt) {
       if (front < .5 && !ball.inHands) { p.contactT = 0; continue; }
       if ((p.contactT = (p.contactT || 0) + dt) < .4 && !wobbly) continue; // 공 1m 안에 0.4초 붙어 있어야 뺏기 시도 (붙자마자 뺏지 않음 → 그 사이 패스 가능)
       p.tackleCD = 2; // 빼앗기는 한 번 시도하면 2초 동안 다시 못 함
+      if (p.team === 1 && !(p.chargeCD > 0) && Math.random() < .5 && shoulderCharge(p, true)) { p.contactT = 0; break; } // 상대 AI도 몸싸움으로 뺏음
       if (Math.random() < (wobbly ? .85 : .5)) { plog("뺏김", { 뺏은선수: (p.team ? "상대" : "우리") + p.num, 붙어있던시간: p.contactT.toFixed(2) }); give(p); toast(p.team === 0 ? '공 탈취!' : '빼앗김!'); break; }
     }
   }
@@ -1653,6 +1654,22 @@ function think(dt) {
   marker.visible = !!userMove; if (userMove) marker.position.set(userMove.x, .03, userMove.z);
   return ctrl;
 }
+// 몸싸움(스페이스): 공을 가졌거나 공 2.5m 안에서 잡으려는 상대가 1.8m 안에 있으면 어깨로 밀어붙임.
+// 상대는 2.5m 밀려나며 0.6초 비틀거리고(걷는 속도까지만), 공을 가진 상대였으면 65% 확률로 공을 빼앗음(아니면 공이 발에서 떨어져 흘러감). 1.2초에 한 번. 상대 AI가 공을 뺏을 때도 같은 밀기
+function shoulderCharge(c, auto = false) {
+  if (!c || c.gk || c.downT > 0 || c.tackleT > 0 || c.chargeCD > 0 || ball.dead || ball.inHands || ball.setPiece) return false;
+  let q = null, bd = 1.8;
+  for (const p of players) { if (p.team === c.team || p.gk || p.downT > 0) continue; const d = d2(p.pos, c.pos); if (d < bd && (ball.owner === p || (!ball.owner && d2(p.pos, ball.pos) < 2.5))) { bd = d; q = p; } }
+  if (!q) return false;
+  const dx = q.pos.x - c.pos.x, dz = q.pos.z - c.pos.z, d = Math.hypot(dx, dz) || .1, ux = dx / d, uz = dz / d;
+  q.vel.x += ux * 4; q.vel.z += uz * 4; q.balanceT = .6; q.shoveT = .45; q.shoveDir = -1; // 밀려나며 비틀거림
+  c.chargeCD = 1.2; c.shoveT = .3; c.shoveDir = 1; c.face = Math.atan2(ux, uz); c.vel.x += ux * 1.5; c.vel.z += uz * 1.5;
+  if (ball.owner === q) {
+    if (Math.random() < .65) { give(c); ball.stealT = .5; if (c.team === 0) toast('몸싸움으로 뺏음!'); else toast('몸싸움에 밀려 뺏김'); }
+    else { ball.owner = null; ball.recv = null; ball.vel.set(-ux * 2 + (Math.random() - .5), 0, -uz * 2 + (Math.random() - .5)); ball.kickT = .2; ball.lastTeam = q.team; if (c.team === 0) toast('몸싸움 — 공이 흘러나옴'); }
+  } else if (c.team === 0) toast('몸싸움!');
+  return true;
+}
 function tackle() {
   const c = controlled();
   if (edit || freeze > 0 || ball.dead || !c || c.tackleT > 0 || c.downT > 0 || (ball.owner && ball.owner.team === 0)) return;
@@ -1749,6 +1766,7 @@ function movePlayers(dt) {
   for (const p of players) {
     if (p.diveT > 0) { p.diveT -= dt; if (p.diveT <= 0) p.diveVel = null; } // 다이빙(몸 날리기) 시간
     if (p.getUpT > 0) p.getUpT -= dt; // 태클 뒤 일어나는 시간
+    if (p.chargeCD > 0) p.chargeCD -= dt; if (p.shoveT > 0) p.shoveT -= dt; // 몸싸움 텀·동작
     if (p.dragBackT > 0) { p.dragBackT -= dt; if (ball.owner !== p) p.dragBackT = 0; else if (p.dragBackT <= 0) { // 긁어 돌기: 공을 끌어온 뒤 어깨 쪽으로 180° 돌아서서 반대 방향으로 몰고 나감
       p.vel.multiplyScalar(.1); p.turnFrom = p.face; p.face += (p.dragSide || 1) * (Math.PI - .05); p.turnT = p.turnLen = .3;
       if (p.team === 0) userMove = new V(clamp(p.pos.x + Math.sin(p.face) * 4, -HL + 1, HL - 1), 0, clamp(p.pos.z + Math.cos(p.face) * 4, -HW + 1, HW - 1)); } }
@@ -2086,7 +2104,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyV') showArrows = !showArrows;
   if (e.code === 'KeyM') $('mini').style.display = $('mini').style.display === 'none' ? 'block' : 'none'; // 미니맵 켜기/끄기
   if (e.code === 'KeyH') $('help').classList.toggle('hide'); // 조작법 안내 보이기/숨기기
-  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && !edit && freeze <= 0) { if (ball.pos.y > .8 || ball.vel.y > 2) jumpUp(controlled()); else tackle(); } } // 스페이스바 = 공이 떠 있으면 점프, 땅에 있으면 태클
+  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && !edit && freeze <= 0) { if (ball.pos.y > .8 || ball.vel.y > 2) jumpUp(controlled()); else if (!shoulderCharge(controlled())) tackle(); } } // 스페이스바 = 공이 떠 있으면 점프, 땅에 있으면 태클
   if (e.code === 'KeyD' && !e.repeat && (canShoot() || ourBallComing())) chargeStart = performance.now(); // 슈팅 게이지 시작
   if (e.code.startsWith('Arrow')) e.preventDefault();
 });
@@ -2771,6 +2789,7 @@ function frame(now) {
     const reachLean = p.lungeT > 0 || p.stretchT > 0 ? .35 : 0;
     p.lean += ((p.diveT > 0 ? 0 : p.kickAnim > 0 ? (p.kickLean || 0) : slide ? .15 : recov ? .45 * (1 - upK) : p.trapT > 0 ? -.4 : clamp(fw / 7, -1, 1) * .12 + accLean + reachLean) - p.lean) * Math.min(1, dt * (p.kickShot && p.kickAnim > 0 ? 30 : 12));
     p.g.rotation.x = p.lean;
+    p.g.rotation.z = p.shoveT > 0 ? (p.shoveDir || 1) * .35 * Math.min(1, p.shoveT / .2) : 0; // 몸싸움: 미는 쪽은 어깨를 기울이고, 밀린 쪽은 반대로 비틀거림
     if (p.stamBar) { // 체력 바 (머리 위, 카메라 쪽을 보게)
       const st = p.stam === undefined ? 1 : p.stam, v = Math.hypot(p.vel.x, p.vel.z);
       p.stamBar.visible = st < .97 && (p === ball.owner || p === ctrl || v > 6);
