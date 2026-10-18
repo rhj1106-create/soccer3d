@@ -1520,6 +1520,7 @@ function think(dt) {
     if (ot.shot === undefined) toast('논스톱!');
   }
   computeCover();
+  for (const p of players) { p.sideRun = false; p.supportRun = false; }
   for (const p of players) { p.target.copy(formTarget(p)); p.speed = coverRole.has(p) ? 7 : 5.2; p.charge = false; } // 수비 자리를 대신 채우는 선수는 빠르게
   findSpace(dt);
   keepSpacing();
@@ -1535,6 +1536,21 @@ function think(dt) {
         else { tx = Math.min(bx + 8 + (i === 2 ? 6 : 0), HL - 6); tz = i === 2 ? 0 : (i === 0 ? 1 : -1) * Math.sign(o.pos.z || 1) * (HW - 6); } // 양 사이드로
         q.target.copy(onside(q, new V(s * tx, 0, tz))); q.speed = 7.2; q.sideRun = true;
       });
+    }
+  }
+  // 단독 돌파 지원 (양 팀): 공 가진 선수가 앞으로 달리는 중이면(초속 3m 넘게, 상대 진영 10m 앞부터) 가장 가까운 팀원 한 명이 그보다 15m 앞, 옆으로 6m 벌린 공간으로 전력 질주
+  // → 앞으로 찔러 주는 패스를 받을 사람이 항상 생김. 공 가진 선수 체력이 40% 아래(더 못 달림)면 부스터까지 켜고 감
+  if (ball.owner && !ball.owner.gk && !ball.setPiece && !ball.inHands && kickoffLock < 0) {
+    const o = ball.owner, s = sgn(o.team), bx = s * o.pos.x, fwd = s * o.vel.x;
+    if (fwd > 3 && bx > -10) {
+      const mate = players.filter(q => q.team === o.team && q !== o && !q.gk && !(q.downT > 0) && !q.sideRun && d2(q.pos, o.pos) < 22 && s * (q.pos.x - o.pos.x) > -12)
+        .sort((a, b) => d2(a.pos, o.pos) - d2(b.pos, o.pos))[0];
+      if (mate) {
+        const side = Math.sign(mate.pos.z - o.pos.z) || (o.pos.z > 0 ? -1 : 1);
+        mate.target.copy(onside(mate, new V(s * Math.min(bx + 15, HL - 6), 0, clamp(o.pos.z + side * 6, -HW + 3, HW - 3)))); mate.speed = 7.5; mate.supportRun = true;
+        const tired = (o.stam === undefined ? 1 : o.stam) < .4;
+        if (tired && !(mate.boostLeft > 0) && !(mate.boostCD > 0)) startBoost(mate);
+      }
     }
   }
   // 우리 공일 때 미드필더·공격수는 자기 자리까지 빠르게(초속 7m) 올라감 (앞으로 2m 넘게 가야 할 때)
