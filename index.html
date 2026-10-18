@@ -1398,23 +1398,38 @@ function computeCover() {
 // ---------- 오프사이드 트랩 (O키) ----------
 // 상대가 공을 가졌을 때 O를 누르면 우리 수비수(2~5번)가 1.6초 동안 한 줄로 9m 앞(공 바로 뒤까지)으로 뛰어 올라감 → 그 순간 앞에 남은 상대는 오프사이드.
 // 공을 압박 중인 수비수와 직접 조작 중인 선수는 제외. 한 번 쓰면 3초 뒤에 다시 가능
-const trap = { t: 0, cd: 0, x: 0 };
-function offsideTrap() {
-  if (edit || freeze > 0 || LAB || kickoffLock >= 0 || trap.t > 0 || replay) return;
-  if (trap.cd > 0) { toast('트랩 준비 중 (' + trap.cd.toFixed(1) + '초)'); return; }
-  if (!((ball.owner && ball.owner.team === 1) || (!ball.owner && ball.lastTeam === 1 && !ball.dead))) { toast('오프사이드 트랩은 상대가 공을 가졌을 때'); return; }
-  const defs = players.filter(p => p.team === 0 && role(p) === 'df' && !(p.downT > 0));
+const trapT = [{ t: 0, cd: 0, x: 0 }, { t: 0, cd: 0, x: 0 }]; const trap = trapT[0]; // 팀별 트랩 상태 (trap = 우리 팀, O키용)
+function offsideTrap(t = 0, auto = false, up = 9) {
+  const tr = trapT[t], s = sgn(t);
+  if (edit || freeze > 0 || LAB || kickoffLock >= 0 || tr.t > 0 || replay) return;
+  if (tr.cd > 0) { if (!auto) toast('트랩 준비 중 (' + tr.cd.toFixed(1) + '초)'); return; }
+  if (!((ball.owner && ball.owner.team !== t) || (!ball.owner && ball.lastTeam !== t && !ball.dead))) { if (!auto) toast('오프사이드 트랩은 상대가 공을 가졌을 때'); return; }
+  const defs = players.filter(p => p.team === t && role(p) === 'df' && !(p.downT > 0));
   if (!defs.length) return;
-  const line = Math.max(...defs.map(p => p.pos.x));
-  trap.t = 1.6; trap.cd = 3; trap.x = Math.min(line + 9, ball.pos.x - 1); toast('오프사이드 트랩! 라인 올리기');
-  for (const p of defs) if (p !== controlled()) { p.vel.x = Math.max(p.vel.x, 0) + 3.5; p.face = Math.PI / 2; } // 신호와 함께 한 발 먼저 치고 나감
+  const line = Math.max(...defs.map(p => s * p.pos.x)); // 팀 기준 깊이 (앞쪽이 +)
+  tr.t = auto ? 1.2 : 1.6; tr.cd = auto ? 6 : 3; tr.x = s * Math.min(line + up, s * ball.pos.x - 1); if (t === 0) toast(auto ? '수비 라인 올리기 (오프사이드 트랩)' : '오프사이드 트랩! 라인 올리기');
+  for (const p of defs) if (p !== (t === 0 ? controlled() : null)) { p.vel.x = s * (Math.max(s * p.vel.x, 0) + 3.5); p.face = s > 0 ? Math.PI / 2 : -Math.PI / 2; } // 신호와 함께 한 발 먼저 치고 나감
+}
+// 수비 라인이 스스로 트랩: 상대 공격수(공 없는)가 우리 라인 2.5m 안쪽 좋은 자리에 서 있고, 공 가진 상대는 라인에서 12m 넘게 떨어져 있으면(바로 돌파는 아님) 라인을 6m 올림 → 걸리거나 물러나게 함
+function autoTrap(t) {
+  const o = ball.owner; if (!o || o.team === t || o.gk || trapT[t].t > 0 || trapT[t].cd > 0) return;
+  const s = sgn(t), defs = players.filter(p => p.team === t && role(p) === 'df' && !(p.downT > 0)); if (defs.length < 3) return;
+  const dep = x => -s * x; // 우리 골대 쪽으로 갈수록 커지는 깊이
+  const line = Math.max(...defs.map(p => dep(p.pos.x))); // 우리 최종 수비 라인 깊이
+  if (dep(ball.pos.x) > line - 12) return; // 공이 라인 12m 안이면 안 함 (돌파 중)
+  if (dep(ball.pos.x) < -5) return; // 공이 하프라인 5m 앞보다 멀면 의미 없음
+  const lurker = players.find(q => q.team === o.team && q !== o && !q.gk && dep(q.pos.x) > line - 2.5 && dep(q.pos.x) < line + .5 && Math.abs(q.pos.z) < 22); // 라인 바로 앞(2.5m 안)에 선 상대
+  if (lurker) offsideTrap(t, true, 6);
 }
 function updateTrap(dt) {
-  if (trap.cd > 0) trap.cd -= dt;
-  if (trap.t <= 0) return;
-  trap.t -= dt;
-  const presser = players.find(p => p.team === 0 && p.pressRole === 'press'), ctrl = controlled();
-  for (const p of players) if (p.team === 0 && role(p) === 'df' && p !== presser && p !== ctrl && !(p.downT > 0)) { p.target.set(Math.max(p.pos.x, trap.x), 0, p.pos.z); p.speed = 7.8; p.pressRole = 'trap-up'; }
+  for (const t of [0, 1]) {
+    const tr = trapT[t], s = sgn(t);
+    if (tr.cd > 0) tr.cd -= dt;
+    if (tr.t <= 0) { autoTrap(t); continue; } // 트랩 중이 아니면 자동 트랩 조건 확인
+    tr.t -= dt;
+    const presser = players.find(p => p.team === t && p.pressRole === 'press'), ctrl = t === 0 ? controlled() : null;
+    for (const p of players) if (p.team === t && role(p) === 'df' && p !== presser && p !== ctrl && !(p.downT > 0)) { p.target.set(s > 0 ? Math.max(p.pos.x, tr.x) : Math.min(p.pos.x, tr.x), 0, p.pos.z); p.speed = 7.8; p.pressRole = 'trap-up'; }
+  }
 }
 // 공 가진 선수가 상대를 한 명 제칠 때마다(진행 방향 앞 3m 안에 있던 상대가 뒤로 넘어감) 체력 0.3 소모 → 세 명 넘게 제치면 바닥나 패스하지 않으면 쉽게 뺏김
 function updateBeats(dt) {
