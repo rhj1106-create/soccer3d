@@ -12,7 +12,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a10;font-family:'M
 #help.hide{display:none}
 #help .ht{font-size:17px;font-weight:bold;margin-bottom:8px;display:flex;align-items:center;gap:10px}
 #help .ht span{font-size:12px;font-weight:normal;opacity:.7;flex:1}
-#help .ht button,#helpBtn,#fsBtn,#lowBtn,#stepBtn{font-family:inherit;font-size:12px;padding:3px 10px;border:0;border-radius:6px;background:#1e88e5;color:#fff;cursor:pointer}
+#help .ht button,#helpBtn,#fsBtn,#lowBtn,#stepBtn,#rpSaveBtn,#rpListBtn{font-family:inherit;font-size:12px;padding:3px 10px;border:0;border-radius:6px;background:#1e88e5;color:#fff;cursor:pointer}
 #help .hc{display:grid;grid-template-columns:repeat(3,1fr);gap:0 22px}
 #help h4{margin:4px 0 2px;font-size:14px;color:#ffd54f}
 #help b{color:#9be7ff}
@@ -71,7 +71,7 @@ b{color:#ffe14d}
 <div id="gauge"><div id="gaugeFill"></div><div id="gaugeMark"></div></div>
 <div id="bal">균형 잡는 중</div>
 <div id="boost"></div>
-<div id="speed">속도 <button data-v="0.5">0.5×</button><button data-v="0.75">0.75×</button><button data-v="1">1×</button> <button id="sndBtn" title="소리 켜기/끄기">🔊</button> <button id="helpBtn">조작법</button> <button id="trainBtn">훈련</button> <button id="fsBtn" title="주소창 없이 전체화면 (Esc로 나감)">전체화면</button> <button id="lowBtn" title="관중·그림자를 꺼서 느린 PC에서 부드럽게">저사양</button> <button id="stepBtn" title="패스·받기마다 멈추고 모두의 움직임을 화살표로 (스페이스: 다음 장면)">한 컷씩</button></div>
+<div id="speed">속도 <button data-v="0.5">0.5×</button><button data-v="0.75">0.75×</button><button data-v="1">1×</button> <button id="sndBtn" title="소리 켜기/끄기">🔊</button> <button id="helpBtn">조작법</button> <button id="trainBtn">훈련</button> <button id="fsBtn" title="주소창 없이 전체화면 (Esc로 나감)">전체화면</button> <button id="lowBtn" title="관중·그림자를 꺼서 느린 PC에서 부드럽게">저사양</button> <button id="stepBtn" title="패스·받기마다 멈추고 모두의 움직임을 화살표로 (스페이스: 다음 장면)">한 컷씩</button> <button id="rpSaveBtn" title="최근 60초 장면을 파일로 저장 (리플레이 중 S와 같음)">리플레이 저장</button> <button id="rpListBtn" title="저장된 리플레이 목록">저장 목록</button></div>
 <div id="train" class="hide">
 <div class="ht">훈련 모드 <span>단계별로 연습한 뒤 실전 경기로</span><button id="trainClose">닫기 ✕</button></div>
 <a href="?lab=train"><b>1단계 · 패스 / 킥 / 슈팅</b><span>실제 11대11이지만 상대는 수비만 하고, 공을 뺏기면 바로 돌려줍니다. 패스·킥·슈팅을 마음껏 해 보세요.</span></a>
@@ -3196,10 +3196,10 @@ addEventListener('mouseup', () => { if (stepDrag) { toast(stepDrag.shirt + '번:
 // ---------- 리플레이 저장 (리플레이 중 S) ----------
 // 기록된 장면(최근 60초, 초당 20장, 선수 위치·방향·공 위치)을 JSON으로 저장: 사무실 서버(localhost)면 soccer3d/replays/ 폴더에, 아니면 파일 내려받기
 function saveReplay() {
-  if (!replay) return;
-  const all = replay.all, step = 3, frames = [];
+  const all = replay ? replay.all : rpBuf; if (!all.length) { toast('저장할 장면이 아직 없음'); return; }
+  const step = 3, frames = [];
   for (let i = 0; i < all.length; i += step) { const f = all[i]; frames.push({ p: f.ps.map(a => [+a[0].toFixed(2), +a[2].toFixed(2), +a[3].toFixed(2)]), b: [+f.ball[0].toFixed(2), +f.ball[1].toFixed(2), +f.ball[2].toFixed(2)] }); }
-  const data = { saved: new Date().toISOString(), score: $('sc').textContent, clock: +clock.toFixed(1), fps: 60 / step, cursor: Math.round((all.length - replay.frames.length + replay.pos) / step), players: players.map(p => ({ team: p.team, num: p.shirt || p.num, gk: !!p.gk })), note: 'p: [x, z, face] per player (players 순서), b: ball [x, y, z]. x: -52.5(우리 골대)~52.5(상대 골대), z: -34~34', frames };
+  const data = { saved: new Date().toISOString(), score: $('sc').textContent, clock: +clock.toFixed(1), fps: 60 / step, cursor: replay ? Math.round((all.length - replay.frames.length + replay.pos) / step) : Math.round(all.length / step), players: players.map(p => ({ team: p.team, num: p.shirt || p.num, gk: !!p.gk })), note: 'p: [x, z, face] per player (players 순서), b: ball [x, y, z]. x: -52.5(우리 골대)~52.5(상대 골대), z: -34~34', frames };
   const d0 = new Date(), two = n => String(n).padStart(2, '0'), json = JSON.stringify(data), name = 'replay_' + d0.getFullYear() + two(d0.getMonth() + 1) + two(d0.getDate()) + '_' + two(d0.getHours()) + two(d0.getMinutes()) + two(d0.getSeconds()) + '.json'; // 현지 시각
   if (location.hostname === 'localhost') fetch('/savereplay?name=' + name, { method: 'POST', body: json }).then(r => r.ok ? toast('리플레이 저장됨: replays/' + name) : toast('저장 실패')).catch(() => toast('저장 실패'));
   else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = name; a.click(); toast('리플레이 파일 내려받음: ' + name); }
@@ -3226,6 +3226,9 @@ function loadSavedReplay(name) {
     rpApply(frames[0]); rpFocus.copy(ball.pos); toast('저장된 리플레이: ' + name);
   }).catch(() => toast('리플레이 파일을 못 읽음'));
 }
+
+$('rpSaveBtn').onclick = e => { e.stopPropagation(); saveReplay(); };
+$('rpListBtn').onclick = e => { e.stopPropagation(); $('train').classList.remove('hide'); loadReplayList(); };
 </script>
 </body>
 </html>
