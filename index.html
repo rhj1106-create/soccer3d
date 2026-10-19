@@ -113,7 +113,7 @@ b{color:#ffe14d}
 <b>휠</b> 확대 · 축소 (공 없을 때)<br>
 <b>V</b> 방향 화살표 &nbsp; <b>M</b> 미니맵<br>
 <b>한 컷씩</b>(버튼) 패스·받기마다 멈추고 모두의 움직임을 화살표로 — 스페이스 다음 장면, → 0.5초, 멈춘 채 패스 지시 가능, 우리 선수 화살표 끝을 끌어 놓으면 그리로 달림<br>
-<b>P</b> 경기 멈춤/재개 &nbsp; <b>R</b> 리플레이 (최근 8초, 골 뒤엔 자동, 멈춘 상태에서도) — 리플레이 중 ←→ 3초 이동(60초까지), 스페이스 멈춤, ↑↓ 속도<br>
+<b>P</b> 경기 멈춤/재개 &nbsp; <b>R</b> 리플레이 (최근 8초, 골 뒤엔 자동, 멈춘 상태에서도) — 리플레이 중 ←→ 3초 이동(60초까지), 스페이스 멈춤, ↑↓ 속도, <b>S</b> 장면 저장(분석용)<br>
 <b>H</b> 이 설명 열기/닫기<br>
 <b>속도 0.5× / 0.75× / 1×</b> 게임 속도 &nbsp; <b>전체화면</b> 주소창 없이 (Esc로 나감) &nbsp; <b>저사양</b> 관중·그림자 끄기 (노트북)<br>
 <b>🔊</b> 소리 켜고 끄기<br>
@@ -2098,7 +2098,7 @@ function handleClick(e) {
 }
 addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (replay) { if (e.code.startsWith('Arrow') || e.code === 'Space') { e.preventDefault(); replayKey(e.code); } else if (!e.repeat) endReplay(); return; } // 리플레이 조작 / 건너뛰기
+  if (replay) { if (e.code.startsWith('Arrow') || e.code === 'Space') { e.preventDefault(); replayKey(e.code); } else if (e.code === 'KeyS') { if (!e.repeat) saveReplay(); } else if (!e.repeat) endReplay(); return; } // 리플레이 조작 / S 저장 / 건너뛰기
   if (e.code === 'KeyP' && !e.repeat && !edit && !LAB) { paused = !paused; $('pauseTag').style.display = paused ? 'block' : 'none'; return; } // P: 경기 멈춤/재개 (멈춘 채 R로 리플레이 가능)
   if (e.code === 'KeyR' && !e.repeat && !edit && !LAB) { startReplay(8); return; } // R: 최근 8초 리플레이
   if (paused && stepMode && (e.code === 'Space' || e.code === 'ArrowRight')) { e.preventDefault(); if (!e.repeat) stepGo(e.code === 'ArrowRight' ? .5 : 0); return; }
@@ -3099,7 +3099,7 @@ function replayStep(dt) {
   if (i >= replay.frames.length) return endReplay();
   rpApply(replay.frames[Math.max(0, i)]);
   const back = ((replay.frames.length - i) / 60).toFixed(0);
-  $('replayTag').textContent = (replay.paused ? '⏸ ' : '▶ ') + '리플레이 ' + back + '초 전 · ' + replay.speed + '배 — ←→ 3초 이동 · 스페이스 멈춤 · ↑↓ 속도 · 그 외 키/클릭 끝';
+  $('replayTag').textContent = (replay.paused ? '⏸ ' : '▶ ') + '리플레이 ' + back + '초 전 · ' + replay.speed + '배 — ←→ 3초 이동 · 스페이스 멈춤 · ↑↓ 속도 · S 저장 · 그 외 키/클릭 끝';
 }
 // 리플레이 조작: ←→ 3초 이동(기록된 60초 안에서 더 뒤로도 감), 스페이스 멈춤/재생, ↑↓ 속도
 function replayKey(code) {
@@ -3184,6 +3184,18 @@ function stepPick(e) {
 }
 addEventListener('mousemove', e => { if (!stepDrag) return; setMouse(e); const g = groundPt(); if (g) { stepDrag.plan = g.clone(); stepDrag.target.copy(g); updateStepArrows(); } });
 addEventListener('mouseup', () => { if (stepDrag) { toast(stepDrag.shirt + '번: 여기로 달리기'); stepDrag = null; } });
+
+// ---------- 리플레이 저장 (리플레이 중 S) ----------
+// 기록된 장면(최근 60초, 초당 20장, 선수 위치·방향·공 위치)을 JSON으로 저장: 사무실 서버(localhost)면 soccer3d/replays/ 폴더에, 아니면 파일 내려받기
+function saveReplay() {
+  if (!replay) return;
+  const all = replay.all, step = 3, frames = [];
+  for (let i = 0; i < all.length; i += step) { const f = all[i]; frames.push({ p: f.ps.map(a => [+a[0].toFixed(2), +a[2].toFixed(2), +a[3].toFixed(2)]), b: [+f.ball[0].toFixed(2), +f.ball[1].toFixed(2), +f.ball[2].toFixed(2)] }); }
+  const data = { saved: new Date().toISOString(), score: $('sc').textContent, clock: +clock.toFixed(1), fps: 60 / step, cursor: Math.round((all.length - replay.frames.length + replay.pos) / step), players: players.map(p => ({ team: p.team, num: p.shirt || p.num, gk: !!p.gk })), note: 'p: [x, z, face] per player (players 순서), b: ball [x, y, z]. x: -52.5(우리 골대)~52.5(상대 골대), z: -34~34', frames };
+  const json = JSON.stringify(data), name = 'replay_' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15) + '.json';
+  if (location.hostname === 'localhost') fetch('/savereplay?name=' + name, { method: 'POST', body: json }).then(r => r.ok ? toast('리플레이 저장됨: replays/' + name) : toast('저장 실패')).catch(() => toast('저장 실패'));
+  else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = name; a.click(); toast('리플레이 파일 내려받음: ' + name); }
+}
 </script>
 </body>
 </html>
