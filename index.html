@@ -1584,14 +1584,17 @@ function think(dt) {
   if (ball.owner && !ball.owner.gk && !ball.setPiece && !ball.inHands && kickoffLock < 0) {
     const o = ball.owner, s = sgn(o.team), bx = s * o.pos.x, fwd = s * o.vel.x;
     if (fwd > 3 && bx > -10) {
-      const mate = players.filter(q => q.team === o.team && q !== o && !q.gk && !(q.downT > 0) && !q.sideRun && d2(q.pos, o.pos) < 22 && s * (q.pos.x - o.pos.x) > -12)
-        .sort((a, b) => d2(a.pos, o.pos) - d2(b.pos, o.pos))[0];
-      if (mate) {
-        const side = Math.sign(mate.pos.z - o.pos.z) || (o.pos.z > 0 ? -1 : 1);
-        mate.target.copy(onside(mate, new V(s * Math.min(bx + 15, HL - 6), 0, clamp(o.pos.z + side * 6, -HW + 3, HW - 3)))); mate.speed = 7.5; mate.supportRun = true;
-        const tired = (o.stam === undefined ? 1 : o.stam) < .4;
-        if (tired && !(mate.boostLeft > 0) && !(mate.boostCD > 0)) startBoost(mate);
-      }
+      const cands = players.filter(q => q.team === o.team && q !== o && !q.gk && role(q) !== 'df' && !(q.downT > 0) && !q.sideRun && d2(q.pos, o.pos) < 30)
+        .sort((a, b) => d2(a.pos, o.pos) - d2(b.pos, o.pos)).slice(0, 4);
+      const tired = (o.stam === undefined ? 1 : o.stam) < .4;
+      // 앞 1명: 15m 앞 옆 공간 / 나머지 3명: 홀더 양옆 7m·뒤 5m에서 같이 달림 (패스 받을 사람이 항상 옆에 있게). 전원 부스터, 끝까지 멈추지 않음
+      cands.forEach((mate, i) => {
+        let tx, tz;
+        if (i === 0) { const side = Math.sign(mate.pos.z - o.pos.z) || (o.pos.z > 0 ? -1 : 1); tx = Math.min(bx + 15, HL - 6); tz = clamp(o.pos.z + side * 6, -HW + 3, HW - 3); }
+        else { const side = i === 3 ? 0 : (Math.sign(mate.pos.z - o.pos.z) || (i === 1 ? 1 : -1)); tx = Math.min(bx + (side ? 2 : -5), HL - 4); tz = clamp(o.pos.z + side * 7, -HW + 3, HW - 3); }
+        mate.target.copy(onside(mate, new V(s * tx, 0, tz))); mate.speed = 7.5; mate.supportRun = true;
+        if ((tired || d2(mate.pos, o.pos) > 10) && !(mate.boostLeft > 0) && !(mate.boostCD > 0)) startBoost(mate); // 홀더가 지쳤거나 10m 넘게 떨어져 있으면 부스터
+      });
     }
   }
   // 우리 공일 때 미드필더·공격수는 자기 자리까지 빠르게(초속 7m) 올라감 (앞으로 2m 넘게 가야 할 때)
@@ -1817,7 +1820,7 @@ function movePlayers(dt) {
     // 순간 체력(0~1): 빨리 달릴수록 빨리 줄고(7.5m/s 질주 8초면 바닥), 공 몰고 달리면 더 빨리(약 7초·40m), 천천히(3m/s 아래) 움직이면 6초 만에 회복. 절반 아래로 떨어지면 최고 속도가 줄어 바닥나면 60%
     if (p.stam === undefined) p.stam = 1;
     { const v = Math.hypot(p.vel.x, p.vel.z); if (p === ball.owner && v > 2.5) p.stam -= dt * (.06 + .1 * (v - 2.5) / 5); else if (v > 4.5) p.stam -= dt * (.04 + .09 * (v - 4.5) / 3); else if (v < 2.5) p.stam += dt * .16; p.stam = clamp(p.stam, 0, 1); }
-    let maxSp = p.speed * (p.stam < .5 ? .6 + .8 * p.stam : 1) * (p.num === 4 || p.num === 5 ? 1.2 : 1); // 최종 수비수(센터백 4·5번)는 다른 선수보다 20% 빠름 (양 팀)
+    let maxSp = p.speed * (p.stam < .5 && !p.supportRun ? .6 + .8 * p.stam : 1) * (p.num === 4 || p.num === 5 ? 1.2 : 1); // 서포트 달리기 중엔 지쳐도 안 느려짐 (끝까지 따라붙음) // 최종 수비수(센터백 4·5번)는 다른 선수보다 20% 빠름 (양 팀)
     if (p.boostCD > 0) p.boostCD -= dt;
     if (p.jumpCD > 0) p.jumpCD -= dt;
     if (p.jumpUp > 0) p.jumpUp -= dt;
