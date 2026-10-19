@@ -3169,7 +3169,7 @@ function setLowGfx(on) {
   lowGfx = on; try { localStorage.setItem('soccerLow', on ? '1' : '0'); } catch (e) {}
   for (const m of crowd.meshes) m.visible = !on;
   for (const sl of crowd.slabs || []) sl.visible = !on;
-  renderer.shadowMap.enabled = !on; sun.castShadow = !on; renderer.setPixelRatio(on ? 1 : Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = !on; sun.castShadow = !on; // (해상도는 그대로: 낮추면 흐릿해짐)
   scene.traverse(o => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; });
   $('lowBtn').classList.toggle('on', on);
 }
