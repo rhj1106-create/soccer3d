@@ -852,6 +852,8 @@ function updateBall(dt) {
       const jumping = p.jumpUp > 0; // W 점프(또는 AI 점프)로 뛰어 있는 중
       if (ball.pos.y >= (jumping ? 3.4 : 2.9)) continue; // 보통 2.9m, 뛰어 있으면 3.4m까지 머리로 닿음
       if (p === ball.lastKicker && ball.kickT > 0) continue;
+      // 먼 팀원에게 가는 패스의 길목(찬 지점 6m 안)에 있는 다른 팀원은 공을 흘려보냄 (가로채서 바로 뺏기는 것 방지). 받을 선수가 공 3m 안이면 예외
+      if (p.team === ball.lastTeam && p !== ball.recv && p !== chaser[p.team] && ball.recv && ball.kickFrom && d2(ball.pos, ball.kickFrom) < 6 && d2(ball.recv.pos, ball.pos) > 3) continue;
       if (ball.keepRecv && p !== ball.keepRecv && p.team === ball.keepRecv.team && d2(ball.keepRecv.pos, ball.pos) < 10) continue; // 굴절된 공은 찬 선수가 가까이 있으면 다른 팀원이 안 잡음
       if (p.team === ball.lastTeam && p !== ball.recv && ball.kickFrom && d2(ball.pos, ball.kickFrom) < 8 && sp > 4) continue; // 찬 직후 굴러가는 우리 패스는 받을 선수 말고는 안 잡음
       if (p.gk && p.team === ball.unsavable) continue; // 빈 공간 40% 이상 슈팅은 골키퍼가 못 잡음
@@ -879,7 +881,7 @@ function updateBall(dt) {
       let sb = null, sd = 2.4; // (상대 공 가로채기는 아래에서 1.2m로 제한)
       for (const p of players) {
         if (p.gk || (p === ball.lastKicker && ball.kickT > 0) || p.downT > 0 || justKicked(p) || (sp > 14 && ball.pos.y < 1.8 && p.team !== ball.lastTeam)) continue;
-        const mateOK = p.team === ball.lastTeam && !(ball.recv && d2(ball.recv.pos, ball.pos) < 4); // 받을 선수가 공 4m 안에 없으면 옆을 지나는 다른 팀원도 뻗어 받음
+        const mateOK = p.team === ball.lastTeam && !(ball.recv && d2(ball.recv.pos, ball.pos) < 4) && !(ball.kickFrom && d2(ball.pos, ball.kickFrom) < 6); // 받을 선수가 공 4m 안에 없고, 찬 지점에서 6m는 지난 뒤에만 다른 팀원이 뻗어 받음 (길목 팀원은 흘려보냄)
         if (!(p === ball.recv || p === chaser[p.team] || mateOK) || !runReachOK(p, d2(p.pos, ball.pos))) continue;
         if (p.team !== ball.lastTeam && d2(p.pos, ball.pos) >= INTERCEPT_R) continue; // 상대 공은 다리를 뻗어도 1.5보(1.2m)까지 // 팀원 다른 선수는 안 뻗음, 달리는 방향 뒤로 오는 공도 못 뻗음
         const d = d2(p.pos, ball.pos);
