@@ -1508,13 +1508,14 @@ function pressThink(dt) {
     if (dir * (p.target.x - ball.pos.x) > 10) { p.target.x = ball.pos.x + dir * 10; p.speed = Math.max(p.speed, 6); p.pressRole = 'compact'; }
   }
   // 단독 찬스: 공 가진 선수가 우리 진영에 있고 그와 우리 골대 사이 폭 12m 안에 우리 필드 선수가 없으면,
-  // 수비수 전원(압박·슈팅각 막기 중인 선수 제외)이 사이드로 벌리지 않고 페널티박스 안(공 앞 6m, 최소 골대 12m 앞)으로 전력 질주해 공 좌우 4m 간격으로 막아 섬
+  // 수비수 전원(압박·슈팅각 막기 중인 선수 제외)이 사이드로 벌리지 않고 공격수–골대 중앙 선 위로 전력 질주해 슈팅 각을 좁힘
   if (bx > 0) {
     const solo = !players.some(p => p.team === t && !p.gk && s * p.pos.x > bx + .5 && Math.abs(p.pos.z - ball.pos.z) < 6);
     if (solo) {
       const defs = players.filter(p => p.team === t && role(p) === 'df' && p.pressRole !== 'press' && p.pressRole !== 'block' && !(p.downT > 0)).sort((a, b) => a.pos.z - b.pos.z);
-      const depth = Math.max(HL - 12, Math.min(HL - 5, bx + 6));
-      defs.forEach((p, i) => { p.target.set(s * depth, 0, clamp(ball.pos.z + (i - (defs.length - 1) / 2) * 4, -14, 14)); p.speed = 7.8; p.charge = true; p.pressRole = 'box'; if (!(p.boostLeft > 0) && !(p.boostCD > 0)) startBoost(p); });
+      // 공격수와 우리 골대 중앙을 잇는 선 위(공보다 4·7·10·13m 골대 쪽, 좌우 1m씩만 벌림)로 달려 슈팅 각을 좁힘
+      const gxs = s * HL, ddx = gxs - ball.pos.x, ddz = -ball.pos.z, dl = Math.hypot(ddx, ddz) || 1, ux = ddx / dl, uz = ddz / dl;
+      defs.forEach((p, i) => { const k = Math.min(4 + i * 3, dl - 2), lat = (i - (defs.length - 1) / 2) * 1; p.target.set(ball.pos.x + ux * k - uz * lat, 0, clamp(ball.pos.z + uz * k + ux * lat, -HW + 2, HW - 2)); p.speed = 7.8; p.charge = true; p.pressRole = 'box'; if (!(p.boostLeft > 0) && !(p.boostCD > 0)) startBoost(p); });
     }
   }
   // 수비 속도: 상대가 공을 가진 동안 수비수(2~5번)는 자리 이동도 빠르게(6.5), 압박은 7.5
