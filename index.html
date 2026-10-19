@@ -26,6 +26,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a10;font-family:'M
 #train a:hover{background:rgba(30,136,229,.5)}
 #train a b{color:#ffd54f;display:block}
 #train a span{opacity:.85;line-height:1.5}
+#rpList{margin-top:10px;border-top:1px solid rgba(255,255,255,.2);padding-top:8px;max-height:200px;overflow:auto}
+#rpList h4{margin:0 0 6px;font-size:14px;color:#ffd54f}
+#rpList div{display:flex;gap:8px;align-items:center;margin:4px 0;font-size:13px}
+#rpList button{font-family:inherit;font-size:12px;padding:2px 8px;border:0;border-radius:6px;background:#1e88e5;color:#fff;cursor:pointer}
+#rpList a{display:inline;background:none;padding:0;margin:0;color:#9be7ff;text-decoration:underline}
 #replayTag{position:fixed;top:48px;left:50%;transform:translateX(-50%);display:none;background:rgba(200,30,30,.85);color:#fff;font-size:15px;font-weight:bold;padding:5px 14px;border-radius:8px;z-index:40}
 #newVer{position:fixed;top:48px;left:50%;transform:translateX(-50%);display:none;background:rgba(30,136,229,.92);color:#fff;font-size:13px;font-weight:bold;padding:5px 12px;border-radius:8px;z-index:41;cursor:pointer}
 #pauseTag{position:fixed;top:48px;left:50%;transform:translateX(-50%);display:none;background:rgba(40,40,40,.88);color:#fff;font-size:15px;font-weight:bold;padding:5px 14px;border-radius:8px;z-index:40}
@@ -75,6 +80,7 @@ b{color:#ffe14d}
 <a href="?lab=intercept"><b>4단계 · 가로채기 / 태클</b><span>상대 패스를 끊고 태클로 뺏는 연습입니다.</span></a>
 <a href="?lab=gk"><b>4단계 · 골키퍼</b><span>슈팅을 막는 연습. Z·X 다이빙을 익힙니다.</span></a>
 <a href="./"><b>실전 경기</b><span>11대11 정식 경기</span></a>
+<div id="rpList"></div>
 </div>
 <canvas id="mini" width="420" height="272"></canvas>
 <div id="help" class="hide">
@@ -2724,7 +2730,7 @@ const helpSeen = () => { try { return localStorage.getItem('soccerHelpSeen'); } 
 if (!helpSeen() && !LAB) $('help').classList.remove('hide');
 $('helpClose').onclick = () => { $('help').classList.add('hide'); try { localStorage.setItem('soccerHelpSeen', '1'); } catch (e) {} };
 $('helpBtn').onclick = e => { e.stopPropagation(); $('help').classList.toggle('hide'); };
-$('trainBtn').onclick = e => { e.stopPropagation(); $('train').classList.toggle('hide'); };
+$('trainBtn').onclick = e => { e.stopPropagation(); $('train').classList.toggle('hide'); if (!$('train').classList.contains('hide')) loadReplayList(); };
 $('trainClose').onclick = () => $('train').classList.add('hide');
 // 설명창·훈련창이 열린 채 바깥(경기장)을 클릭하면 창을 닫음 (노트북 등 처음 접속에서 클릭이 안 먹는 것처럼 보이지 않게)
 addEventListener('mousedown', e => { for (const id of ['help', 'train']) { const el = $(id); if (!el.classList.contains('hide') && !el.contains(e.target) && !e.target.closest('#speed')) { el.classList.add('hide'); if (id === 'help') try { localStorage.setItem('soccerHelpSeen', '1'); } catch (err) {} } } }, true);
@@ -3197,6 +3203,28 @@ function saveReplay() {
   const d0 = new Date(), two = n => String(n).padStart(2, '0'), json = JSON.stringify(data), name = 'replay_' + d0.getFullYear() + two(d0.getMonth() + 1) + two(d0.getDate()) + '_' + two(d0.getHours()) + two(d0.getMinutes()) + two(d0.getSeconds()) + '.json'; // 현지 시각
   if (location.hostname === 'localhost') fetch('/savereplay?name=' + name, { method: 'POST', body: json }).then(r => r.ok ? toast('리플레이 저장됨: replays/' + name) : toast('저장 실패')).catch(() => toast('저장 실패'));
   else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = name; a.click(); toast('리플레이 파일 내려받음: ' + name); }
+}
+
+// ---------- 저장된 리플레이 목록 (훈련 창 아래, localhost 서버에서만) ----------
+// 리플레이 중 S로 저장한 장면을 3D 리플레이로 다시 보거나(3D 보기), 위에서 내려다보는 2D 화면(2D 보기)으로 봄
+function loadReplayList() {
+  const box = $('rpList'); if (location.hostname !== 'localhost') { box.innerHTML = ''; return; }
+  fetch('/replays').then(r => r.json()).then(list => {
+    box.innerHTML = '<h4>저장된 리플레이 (리플레이 중 S로 저장)</h4>' + (list.length ? list.map(f => '<div><span>' + f.replace('replay_', '').replace('.json', '').replace('_', ' ') + '</span><button data-f="' + f + '">3D 보기</button><a href="replays/view.html?f=' + f + '" target="_blank">2D 보기</a></div>').join('') : '<div>아직 없음</div>');
+    for (const b of box.querySelectorAll('button')) b.onclick = e => { e.stopPropagation(); loadSavedReplay(b.dataset.f); };
+  }).catch(() => { box.innerHTML = ''; });
+}
+function loadSavedReplay(name) {
+  fetch('replays/' + name).then(r => r.json()).then(d => {
+    const dup = Math.max(1, Math.round(60 / (d.fps || 20))), frames = [];
+    for (const f of d.frames) { const snap = { ps: f.p.map(a => [a[0], 0, a[1], a[2], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), ball: [f.b[0], f.b[1], f.b[2], 0, 0, 0], q: null }; for (let k = 0; k < dup; k++) frames.push(snap); }
+    if (!frames.length) return;
+    $('train').classList.add('hide');
+    if (replay) endReplay();
+    replay = { frames, pos: 0, speed: .5, saved: rpSnap(), auto: false, savedMsg: $('msg').style.display, paused: false, all: frames, fromFile: name };
+    $('replayTag').style.display = 'block'; $('msg').style.display = 'none'; $('pauseTag').style.display = 'none'; userMove = null; marker.visible = false;
+    rpApply(frames[0]); rpFocus.copy(ball.pos); toast('저장된 리플레이: ' + name);
+  }).catch(() => toast('리플레이 파일을 못 읽음'));
 }
 </script>
 </body>
