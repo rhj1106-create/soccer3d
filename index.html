@@ -3103,21 +3103,21 @@ function endReplay() {
 const rpFocus = new V();
 function replayStep(dt) {
   if (!replay.paused) replay.pos += dt * replay.speed * 60;
-  const i = Math.floor(replay.pos);
-  if (i >= replay.frames.length) return endReplay();
+  let i = Math.floor(replay.pos);
+  if (i >= replay.frames.length) { replay.pos = replay.frames.length - 1; i = replay.frames.length - 1; replay.paused = true; replay.ended = true; } // 끝나면 마지막 장면에서 멈춤 (키·클릭으로 나감)
   rpApply(replay.frames[Math.max(0, i)]);
   const back = ((replay.frames.length - i) / 60).toFixed(0);
-  $('replayTag').textContent = (replay.paused ? '⏸ ' : '▶ ') + '리플레이 ' + back + '초 전 · ' + replay.speed + '배 — ←→ 3초 이동 · 스페이스 멈춤 · ↑↓ 속도 · S 저장 · 그 외 키/클릭 끝';
+  $('replayTag').textContent = (replay.ended ? '⏹ 리플레이 끝 — ← 되감기 · S 저장 · 그 외 키/클릭으로 경기로' : (replay.paused ? '⏸ ' : '▶ ') + '리플레이 ' + back + '초 전 · ' + replay.speed + '배 — ←→ 3초 이동 · 스페이스 멈춤 · ↑↓ 속도 · S 저장 · 그 외 키/클릭 끝');
 }
 // 리플레이 조작: ←→ 3초 이동(기록된 60초 안에서 더 뒤로도 감), 스페이스 멈춤/재생, ↑↓ 속도
 function replayKey(code) {
-  if (code === 'Space') { replay.paused = !replay.paused; return true; }
+  if (code === 'Space') { replay.paused = !replay.paused; replay.ended = false; return true; }
   if (code === 'ArrowUp' || code === 'ArrowDown') { const sp = [.25, .5, 1]; let k = sp.indexOf(replay.speed); if (k < 0) k = 1; k = clamp(k + (code === 'ArrowUp' ? 1 : -1), 0, 2); replay.speed = sp[k]; return true; }
   if (code === 'ArrowLeft' || code === 'ArrowRight') {
     const off = replay.all.length - replay.frames.length; // 현재 구간이 전체 기록에서 시작하는 위치
     let abs = off + replay.pos + (code === 'ArrowLeft' ? -180 : 180);
     abs = clamp(abs, 0, replay.all.length - 1);
-    replay.frames = replay.all.slice(Math.min(abs, off)); replay.pos = abs - Math.min(abs, off); // 더 뒤로 가면 구간을 앞으로 넓힘
+    replay.frames = replay.all.slice(Math.min(abs, off)); replay.pos = abs - Math.min(abs, off); replay.ended = false; if (code === 'ArrowLeft') replay.paused = false; // 더 뒤로 가면 구간을 앞으로 넓힘, 되감으면 다시 재생
     return true;
   }
   return false;
