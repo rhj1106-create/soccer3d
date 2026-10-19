@@ -3192,7 +3192,7 @@ function saveReplay() {
   const all = replay.all, step = 3, frames = [];
   for (let i = 0; i < all.length; i += step) { const f = all[i]; frames.push({ p: f.ps.map(a => [+a[0].toFixed(2), +a[2].toFixed(2), +a[3].toFixed(2)]), b: [+f.ball[0].toFixed(2), +f.ball[1].toFixed(2), +f.ball[2].toFixed(2)] }); }
   const data = { saved: new Date().toISOString(), score: $('sc').textContent, clock: +clock.toFixed(1), fps: 60 / step, cursor: Math.round((all.length - replay.frames.length + replay.pos) / step), players: players.map(p => ({ team: p.team, num: p.shirt || p.num, gk: !!p.gk })), note: 'p: [x, z, face] per player (players 순서), b: ball [x, y, z]. x: -52.5(우리 골대)~52.5(상대 골대), z: -34~34', frames };
-  const json = JSON.stringify(data), name = 'replay_' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15) + '.json';
+  const d0 = new Date(), two = n => String(n).padStart(2, '0'), json = JSON.stringify(data), name = 'replay_' + d0.getFullYear() + two(d0.getMonth() + 1) + two(d0.getDate()) + '_' + two(d0.getHours()) + two(d0.getMinutes()) + two(d0.getSeconds()) + '.json'; // 현지 시각
   if (location.hostname === 'localhost') fetch('/savereplay?name=' + name, { method: 'POST', body: json }).then(r => r.ok ? toast('리플레이 저장됨: replays/' + name) : toast('저장 실패')).catch(() => toast('저장 실패'));
   else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = name; a.click(); toast('리플레이 파일 내려받음: ' + name); }
 }
