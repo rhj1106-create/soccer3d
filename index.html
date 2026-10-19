@@ -1619,7 +1619,7 @@ function think(dt) {
     }
     if (loose[t] && possTeam() === t) startOverlap(loose[t]);
     // 흘러가는 공(누가 찼든, 슈팅 제외): 쫓는 선수 말고도 공 25m 안에서 공보다 8m 넘게 뒤처지지 않은 공격수·미드필더 2명은 상대가 먼저 닿을 것 같아도 공이 갈 곳으로 끝까지 뜀 (양 팀)
-    if (loose[t] && !ball.dead && !ball.isShot) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && role(p) !== 'df' && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && d2(p.pos, ball.pos) < 25 && s3 * (p.pos.x - ball.pos.x) > -8).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(r.t < 3.5 ? r.pt : loose[t].pt); p.speed = 7.2; p.pressRole = 'chase'; }); }
+    if (loose[t] && !ball.dead && !ball.isShot) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && role(p) !== 'df' && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && d2(p.pos, ball.pos) < 25).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(r.t < 3.5 ? r.pt : loose[t].pt); p.speed = 7.2; p.pressRole = 'chase'; }); }
   }
   // 상대 AI 미드필더: 패스가 오는 동안(15m 안) 가끔 스스로 뒤를 확인
   const rv = ball.recv;
