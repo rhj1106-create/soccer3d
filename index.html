@@ -1625,7 +1625,7 @@ function think(dt) {
     }
     if (loose[t] && possTeam() === t) startOverlap(loose[t]);
     // 흘러가는 공(누가 찼든, 슈팅 제외): 쫓는 선수 말고도 공 25m 안에서 공보다 8m 넘게 뒤처지지 않은 공격수·미드필더 2명은 상대가 먼저 닿을 것 같아도 공이 갈 곳으로 끝까지 뜀 (양 팀)
-    if (loose[t] && !ball.dead && !ball.isShot) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && role(p) !== 'df' && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && d2(p.pos, ball.pos) < 25).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(r.t < 3.5 ? r.pt : loose[t].pt); p.speed = chaseSpeed(p); p.charge = false; p.pressRole = 'chase'; }); }
+    if (loose[t] && !ball.dead && !ball.isShot) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && role(p) !== 'df' && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && d2(p.pos, ball.pos) < 25).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(chasePoint(p, r.t < 3.5 ? r.pt : loose[t].pt)); p.speed = 7.2; p.pressRole = 'chase'; }); }
   }
   // 상대 AI 미드필더: 패스가 오는 동안(15m 안) 가끔 스스로 뒤를 확인
   const rv = ball.recv;
@@ -1648,7 +1648,7 @@ function think(dt) {
     const lp = loose[t].p, bx = ball.pos.x - lp.pos.x, bz = ball.pos.z - lp.pos.z, fx = Math.sin(lp.face), fz = Math.cos(lp.face);
     const fromBehind = bx * fx + bz * fz < -.5 && (-bx * ball.vel.x - bz * ball.vel.z) > 0 && Math.hypot(bx, bz) < 15; // 공이 등 뒤에서 나에게 오는 중
     if (lp === ball.recv && fromBehind && !lp.gk) { const bs = Math.hypot(ball.vel.x, ball.vel.z) || 1; lp.target.copy(loose[t].pt).addScaledVector(ball.vel, 2 / bs); lp.speed = 7.2; } // 등 뒤에서 오는 공: 멈추지 않고 공이 지나갈 선 위로 들어가 같은 방향으로 달리며 받음
-    else { lp.target.copy(loose[t].pt); lp.speed = chaseSpeed(lp); lp.charge = false; }
+    else { lp.target.copy(chasePoint(lp, loose[t].pt)); lp.speed = 7.2; }
   }
 
   // 상대팀
@@ -1762,8 +1762,8 @@ function boostSmart() {
   }
   return startBoost(p);
 }
-// 흘러가는 공을 쫓을 때의 속도: 공 5m 안이고 공이 느리면(초속 5m 아래) 공 속도에 맞춰 줄여 발밑에 세움 (전속력으로 달려 지나치지 않게). 멀거나 빠른 공은 전력
-function chaseSpeed(p) { const bs = Math.hypot(ball.vel.x, ball.vel.z), d = d2(p.pos, ball.pos); return d < 5 && bs < 5 ? clamp(2.5 + bs, 3, 6.5) : 7.2; }
+// 흘러가는 공을 쫓을 때의 목표 지점: 속도는 전력 그대로, 방향을 잡음 — 공 6m 안이고 공이 느리면(초속 6m 아래) 공이 굴러가는 방향 앞쪽(공보다 1.5m + 공 속도×0.4 앞)을 목표로 해서 공이 발 앞으로 굴러 들어오게 함 (공 자체를 향해 달리면 지나침)
+function chasePoint(p, pt) { const bs = Math.hypot(ball.vel.x, ball.vel.z), d = d2(p.pos, ball.pos); if (d < 6 && bs < 6) { const k = 1.5 + bs * .4; const ux = bs > .2 ? ball.vel.x / bs : Math.sin(p.face), uz = bs > .2 ? ball.vel.z / bs : Math.cos(p.face); return new V(ball.pos.x + ux * k, 0, ball.pos.z + uz * k); } return pt; }
 function moveWithInertia(p, want, dt) {
   const dvx = want.x - p.vel.x, dvz = want.z - p.vel.z, v = Math.hypot(p.vel.x, p.vel.z);
   let ax, az;
