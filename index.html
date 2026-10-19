@@ -1033,7 +1033,7 @@ function formTarget(p) {
 // 공격 중에는 오프사이드 라인 바로 앞에서 기다림
 function onside(p, v) {
   if (p.gk || possTeam() !== p.team) return v;
-  const s = sgn(p.team), lim = offsideLine(p.team) - .5;
+  const s = sgn(p.team), lim = offsideLine(p.team) - 1.5; // 라인 안쪽 1.5m 여유
   if (s * v.x > lim) v.x = s * lim;
   return v;
 }
@@ -1649,6 +1649,8 @@ function think(dt) {
   updateFeints(dt); // 페인팅 턴 진행 (속이는 동작 → 턴)
   // 한 컷씩 모드에서 사용자가 끌어 놓은 지점이 있는 우리 선수는 그리로 달림 (도착하면 해제, 공을 뺏기면 모두 해제)
   for (const p of players) if (p.plan) { if (p.team !== 0 || (ball.owner && ball.owner.team === 1) || d2(p.pos, p.plan) < .7 || p === ball.owner) p.plan = null; else { p.target.copy(onside(p, p.plan.clone())); p.speed = 7; } }
+  // 오프사이드 위치(공격 중, 공 없는 팀원)에 있으면 무엇을 하던 중이든 전력으로 라인 안쪽 1.5m까지 되돌아옴 (패스가 오기 전에)
+  if (ball.owner && !ball.setPiece && kickoffLock < 0) { const at = ball.owner.team, s2 = sgn(at), lim = offsideLine(at) - 1.5; for (const p of players) if (p.team === at && p !== ball.owner && !p.gk && s2 * p.pos.x > lim + .2) { p.target.set(s2 * (lim - .5), 0, p.pos.z); p.speed = 7.2; p.pressRole = 'onside'; } }
   // 킥오프 전: 공을 찰 때까지 전원 제자리
   if (kickoffLock >= 0) for (const p of players) { p.target.copy(p.pos); p.speed = 0; }
   if (kickoffLock >= 0 && userMove && !kickoffHintT) { kickoffHintT = 1; toast(kickoffLock === 0 ? '킥오프: 팀원(파란 선수)을 클릭해 패스하면 경기 시작' : '상대 킥오프 — 상대가 차면 움직일 수 있어요'); } // 킥오프 때 잔디를 클릭하면 안내
