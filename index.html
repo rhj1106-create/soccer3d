@@ -490,8 +490,8 @@ function makePlayer(team, num, fx, fz, gk) {
   const p = { team, num, shirt: shirtNo, gk, g, ring: rg, fx, fz, pos: new V(), vel: new V(), target: new V(), speed: 5, face: 0, decide: 1, ...parts, stride: 0, kickAnim: 0, tackleT: 0, downT: 0, tackleDir: new V(), lean: 0 };
   g.rotation.order = 'YXZ';
   p.faceArrow = new THREE.Mesh(faceArrowGeo, faceArrowMat); p.faceArrow.position.y = .035; g.add(p.faceArrow);
-  p.stamBar = new THREE.Group(); const sbBg = new THREE.Mesh(new THREE.BoxGeometry(1, .12, .04), new THREE.MeshBasicMaterial({ color: 0x222222, depthTest: false }));
-  p.stamFill = new THREE.Mesh(new THREE.BoxGeometry(1, .09, .05), new THREE.MeshBasicMaterial({ color: 0x44dd44, depthTest: false })); p.stamBar.add(sbBg, p.stamFill); p.stamBar.position.y = 3.35; p.stamBar.visible = false; p.stamBar.renderOrder = 11; sbBg.renderOrder = 11; p.stamFill.renderOrder = 12; g.add(p.stamBar);
+  p.stamBar = new THREE.Group(); const sbBg = new THREE.Mesh(new THREE.BoxGeometry(.7, .08, .04), new THREE.MeshBasicMaterial({ color: 0x222222, depthTest: false, transparent: true, opacity: .55 }));
+  p.stamFill = new THREE.Mesh(new THREE.BoxGeometry(.7, .06, .05), new THREE.MeshBasicMaterial({ color: 0x44dd44, depthTest: false, transparent: true, opacity: .8 })); p.stamBar.add(sbBg, p.stamFill); p.stamBar.position.y = 3.35; p.stamBar.visible = false; p.stamBar.renderOrder = 11; sbBg.renderOrder = 11; p.stamFill.renderOrder = 12; g.add(p.stamBar);
   p.moveArrow = new THREE.Mesh(moveArrowGeo, moveArrowMat); p.moveArrow.visible = false; scene.add(p.moveArrow);
   pick.userData.p = p; pickMeshes.push(pick); players.push(p);
   return p;
@@ -1618,8 +1618,8 @@ function think(dt) {
       else { loose[t] = intercept(ball.recv, 7.2); loose[t].p = ball.recv; chaser[t] = ball.recv; }
     }
     if (loose[t] && possTeam() === t) startOverlap(loose[t]);
-    // 우리 팀이 찬 공(스루패스 등)이 흘러가는 중: 받을 선수 말고도 공 25m 안에서 공보다 8m 넘게 뒤처지지 않은 공격수 2명은 공이 갈 곳으로 끝까지 뜀 (상대에게 넘어가지 않게)
-    if (loose[t] && ball.lastTeam === t && !ball.dead) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && d2(p.pos, ball.pos) < 25 && s3 * (p.pos.x - ball.pos.x) > -8).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(r.t < 3.5 ? r.pt : loose[t].pt); p.speed = 7.2; p.pressRole = 'chase'; }); }
+    // 흘러가는 공(누가 찼든, 슈팅 제외): 쫓는 선수 말고도 공 25m 안에서 공보다 8m 넘게 뒤처지지 않은 공격수·미드필더 2명은 상대가 먼저 닿을 것 같아도 공이 갈 곳으로 끝까지 뜀 (양 팀)
+    if (loose[t] && !ball.dead && !ball.isShot) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && role(p) !== 'df' && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && d2(p.pos, ball.pos) < 25 && s3 * (p.pos.x - ball.pos.x) > -8).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(r.t < 3.5 ? r.pt : loose[t].pt); p.speed = 7.2; p.pressRole = 'chase'; }); }
   }
   // 상대 AI 미드필더: 패스가 오는 동안(15m 안) 가끔 스스로 뒤를 확인
   const rv = ball.recv;
@@ -2815,8 +2815,8 @@ function frame(now) {
     p.g.rotation.z = p.shoveT > 0 ? (p.shoveDir || 1) * .35 * Math.min(1, p.shoveT / .2) : 0; // 몸싸움: 미는 쪽은 어깨를 기울이고, 밀린 쪽은 반대로 비틀거림
     if (p.stamBar) { // 체력 바 (머리 위, 카메라 쪽을 보게)
       const st = p.stam === undefined ? 1 : p.stam, v = Math.hypot(p.vel.x, p.vel.z);
-      p.stamBar.visible = st < .97 && (p === ball.owner || p === ctrl || v > 6);
-      if (p.stamBar.visible) { p.stamBar.rotation.y = -p.face; p.stamBar.rotation.x = -p.lean; p.stamFill.scale.x = Math.max(.02, st); p.stamFill.position.x = -(1 - st) / 2; p.stamFill.material.color.setHex(st > .5 ? 0x44dd44 : st > .25 ? 0xffcc00 : 0xff3333); }
+      p.stamBar.visible = st < .9 && !ball.dead && freeze <= 0 && kickoffLock < 0 && (p === ball.owner || p === ctrl || v > 6);
+      if (p.stamBar.visible) { p.stamBar.rotation.y = -p.face; p.stamBar.rotation.x = -p.lean; p.stamFill.scale.x = Math.max(.02, st); p.stamFill.position.x = -(1 - st) * .35; p.stamFill.material.color.setHex(st > .5 ? 0x44dd44 : st > .25 ? 0xffcc00 : 0xff3333); }
     }
     // 점프 헤딩: 0.8m 뛰어올랐다 내려옴, 두 팔은 위로
     if (p.dummyT > 0) { p.dummyT -= dt; p.g.position.y = Math.sin(Math.max(0, p.dummyT) / .4 * Math.PI) * .35; p.legL.rotation.z = -.5; p.legR.rotation.z = .5; } // 흘려보내기: 살짝 뛰어 다리 벌림
