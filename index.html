@@ -1041,7 +1041,7 @@ function formTarget(p) {
 const seenLine = [0, 0]; // 공격수가 느끼는 오프사이드 라인 (실제보다 0.4초쯤 늦게 따라감 → 갑자기 올린 라인엔 걸릴 수 있음)
 function updateSeenLine(dt) { for (const t of [0, 1]) { const L = offsideLine(t); seenLine[t] += (L - seenLine[t]) * Math.min(1, dt * 2.5); if (L < seenLine[t]) seenLine[t] = L; } } // 라인이 내려가는 건 바로 앎
 function onside(p, v) {
-  if (p.gk || possTeam() !== p.team) return v;
+  if (p.gk || possTeam() !== p.team || !ball.owner) return v; // 공이 날아가는 중엔 라인에 묶이지 않음 (오프사이드는 차는 순간만 판정) → 스루패스 받으러 끝까지 뜀
   const s = sgn(p.team), lim = seenLine[p.team] - 1.5; // 느끼는 라인 안쪽 1.5m 여유
   if (s * v.x > lim) v.x = s * lim;
   return v;
@@ -1612,6 +1612,8 @@ function think(dt) {
       else { loose[t] = intercept(ball.recv, 7.2); loose[t].p = ball.recv; chaser[t] = ball.recv; }
     }
     if (loose[t] && possTeam() === t) startOverlap(loose[t]);
+    // 우리 팀이 찬 공(스루패스 등)이 흘러가는 중: 받을 선수 말고도 공 25m 안에서 공보다 8m 넘게 뒤처지지 않은 공격수 2명은 공이 갈 곳으로 끝까지 뜀 (상대에게 넘어가지 않게)
+    if (loose[t] && ball.lastTeam === t && !ball.dead) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && d2(p.pos, ball.pos) < 25 && s3 * (p.pos.x - ball.pos.x) > -8).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(r.t < 3.5 ? r.pt : loose[t].pt); p.speed = 7.2; p.pressRole = 'chase'; }); }
   }
   // 상대 AI 미드필더: 패스가 오는 동안(15m 안) 가끔 스스로 뒤를 확인
   const rv = ball.recv;
