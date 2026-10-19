@@ -1431,7 +1431,7 @@ function updateTrap(dt) {
     if (tr.t <= 0) { autoTrap(t); continue; } // 트랩 중이 아니면 자동 트랩 조건 확인
     tr.t -= dt;
     const presser = players.find(p => p.team === t && p.pressRole === 'press'), ctrl = t === 0 ? controlled() : null;
-    for (const p of players) if (p.team === t && role(p) === 'df' && p !== presser && p !== ctrl && !(p.downT > 0)) {
+    for (const p of players) if (p.team === t && role(p) === 'df' && p !== presser && (p !== ctrl || !userMove) && !(p.downT > 0)) { // 조작 중인 수비수도 직접 이동 명령이 없으면 같이 올라감 (한 명이 남으면 라인이 안 올라감)
       p.target.set(s > 0 ? Math.max(p.pos.x, tr.x) : Math.min(p.pos.x, tr.x), 0, p.pos.z); p.speed = 7.8; p.pressRole = 'trap-up';
       p.trapPush = tr.t > .25 && s * (tr.x - p.pos.x) > .5; // 트랩은 한 줄로 '확' 올라가는 동작: 이동 계산 뒤 최소 초속 5.5m 보장 (movePlayers)
     }
@@ -1643,7 +1643,7 @@ function think(dt) {
     ctrl.target.copy(userMove); ctrl.speed = ball.owner === ctrl ? 5.6 : 7.2;
     if (d2(ctrl.pos, userMove) < .4) userMove = null;
   } else if (ball.owner === ctrl) { ctrl.target.copy(ctrl.pos); }
-  else if (ball.owner) { ctrl.target.copy(jockey(ctrl, ball.owner, dt)); ctrl.speed = 7.2; } // 가까우면 견제하며 따라감
+  else if (ball.owner && ctrl.pressRole !== 'trap-up') { ctrl.target.copy(jockey(ctrl, ball.owner, dt)); ctrl.speed = 7.2; } // 가까우면 견제하며 따라감 (트랩으로 올라가는 중엔 유지)
   // 태클 중이면 정한 방향으로 미끄러지고, 넘어진 선수는 멈춤
   for (const p of players) {
     if (p.tackleT > 0) { p.target.copy(p.pos).addScaledVector(p.tackleDir, 3); p.speed = 8; }
