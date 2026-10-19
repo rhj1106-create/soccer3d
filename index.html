@@ -1786,7 +1786,7 @@ function movePlayers(dt) {
     // 순간 체력(0~1): 빨리 달릴수록 빨리 줄고(7.5m/s 질주 8초면 바닥), 공 몰고 달리면 더 빨리(약 7초·40m), 천천히(3m/s 아래) 움직이면 6초 만에 회복. 절반 아래로 떨어지면 최고 속도가 줄어 바닥나면 60%
     if (p.stam === undefined) p.stam = 1;
     { const v = Math.hypot(p.vel.x, p.vel.z); if (p === ball.owner && v > 2.5) p.stam -= dt * (.06 + .1 * (v - 2.5) / 5); else if (v > 4.5) p.stam -= dt * (.04 + .09 * (v - 4.5) / 3); else if (v < 2.5) p.stam += dt * .16; p.stam = clamp(p.stam, 0, 1); }
-    let maxSp = p.speed * (p.stam < .5 ? .6 + .8 * p.stam : 1);
+    let maxSp = p.speed * (p.stam < .5 ? .6 + .8 * p.stam : 1) * (p.num === 4 || p.num === 5 ? 1.2 : 1); // 최종 수비수(센터백 4·5번)는 다른 선수보다 20% 빠름 (양 팀)
     if (p.boostCD > 0) p.boostCD -= dt;
     if (p.jumpCD > 0) p.jumpCD -= dt;
     if (p.jumpUp > 0) p.jumpUp -= dt;
