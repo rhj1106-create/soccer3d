@@ -17,7 +17,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a10;font-family:'M
 #help h4{margin:4px 0 2px;font-size:14px;color:#ffd54f}
 #help b{color:#9be7ff}
 @media(max-width:700px){#help .hc{grid-template-columns:1fr}}
-#train{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(10,20,30,.93);color:#fff;padding:14px 18px;font-size:13px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.5);width:min(520px,calc(100% - 40px));z-index:50}
+#train{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(10,20,30,.93);color:#fff;padding:14px 18px;font-size:13px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.5);width:min(520px,calc(100% - 40px));max-height:calc(100% - 40px);overflow:auto;z-index:50}
 #train.hide{display:none}
 #train .ht{font-size:17px;font-weight:bold;margin-bottom:8px;display:flex;align-items:center;gap:10px}
 #train .ht span{font-size:12px;font-weight:normal;opacity:.7;flex:1}
@@ -26,7 +26,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a10;font-family:'M
 #train a:hover{background:rgba(30,136,229,.5)}
 #train a b{color:#ffd54f;display:block}
 #train a span{opacity:.85;line-height:1.5}
-#rpList{margin-top:10px;border-top:1px solid rgba(255,255,255,.2);padding-top:8px;max-height:200px;overflow:auto}
+#rpList{margin:0 0 10px;border-bottom:1px solid rgba(255,255,255,.2);padding-bottom:8px;max-height:220px;overflow:auto}
 #rpList h4{margin:0 0 6px;font-size:14px;color:#ffd54f}
 #rpList div{display:flex;gap:8px;align-items:center;margin:4px 0;font-size:13px}
 #rpList button{font-family:inherit;font-size:12px;padding:2px 8px;border:0;border-radius:6px;background:#1e88e5;color:#fff;cursor:pointer}
@@ -74,13 +74,13 @@ b{color:#ffe14d}
 <div id="speed">속도 <button data-v="0.5">0.5×</button><button data-v="0.75">0.75×</button><button data-v="1">1×</button> <button id="sndBtn" title="소리 켜기/끄기">🔊</button> <button id="helpBtn">조작법</button> <button id="trainBtn">훈련</button> <button id="fsBtn" title="주소창 없이 전체화면 (Esc로 나감)">전체화면</button> <button id="lowBtn" title="관중·그림자를 꺼서 느린 PC에서 부드럽게">저사양</button> <button id="stepBtn" title="패스·받기마다 멈추고 모두의 움직임을 화살표로 (스페이스: 다음 장면)">한 컷씩</button> <button id="rpSaveBtn" title="최근 60초 장면을 파일로 저장 (리플레이 중 S와 같음)">리플레이 저장</button> <button id="rpListBtn" title="저장된 리플레이 목록">저장 목록</button></div>
 <div id="train" class="hide">
 <div class="ht">훈련 모드 <span>단계별로 연습한 뒤 실전 경기로</span><button id="trainClose">닫기 ✕</button></div>
+<div id="rpList"></div>
 <a href="?lab=train"><b>1단계 · 패스 / 킥 / 슈팅</b><span>실제 11대11이지만 상대는 수비만 하고, 공을 뺏기면 바로 돌려줍니다. 패스·킥·슈팅을 마음껏 해 보세요.</span></a>
 <a href="?lab=shot"><b>1단계 · 슈팅 집중</b><span>골키퍼와 1대1. 거리·위치를 바꿔 가며 D 슈팅과 S·F 슈팅을 연습합니다.</span></a>
 <a href="?lab=turn"><b>2·3단계 · 드리블 · 패스 받기 / 턴</b><span>등 뒤에서 오는 패스를 받으며 턴, 흘리며 턴을 연습합니다.</span></a>
 <a href="?lab=intercept"><b>4단계 · 가로채기 / 태클</b><span>상대 패스를 끊고 태클로 뺏는 연습입니다.</span></a>
 <a href="?lab=gk"><b>4단계 · 골키퍼</b><span>슈팅을 막는 연습. Z·X 다이빙을 익힙니다.</span></a>
 <a href="./"><b>실전 경기</b><span>11대11 정식 경기</span></a>
-<div id="rpList"></div>
 </div>
 <canvas id="mini" width="420" height="272"></canvas>
 <div id="help" class="hide">
