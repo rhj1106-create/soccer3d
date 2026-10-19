@@ -814,6 +814,8 @@ function updateBall(dt) {
   if (sp > .05) ballMesh.rotateOnWorldAxis(new V(ball.vel.z / sp, 0, -ball.vel.x / sp), sp * dt / BR);
   ballMesh.position.copy(ball.pos);
   if (pendingKickoff >= 0 || ball.dead) return;
+  // 오프사이드 위치였던 선수가 공을 받으려는 순간(공이 2.5m 안, 그 선수가 공에 가장 가까운 자기 팀원)에 바로 선언 — 수비수가 먼저 가로채도 판정이 남게
+  if (ball.offside && ball.offside.size && !ball.owner) { for (const q of ball.offside) { if (q.downT > 0) continue; const dq = d2(q.pos, ball.pos); if (dq < 2.5 && !players.some(m => m.team === q.team && m !== q && !ball.offside.has(m) && d2(m.pos, ball.pos) < dq)) { ball.offside = null; return callOffside(q); } } }
   // 굴절: 강한 공(초속 14m 넘게, 1.8m 아래)이 상대 몸(0.45m 안)을 지나가면 잡지 못하고 맞고 튕겨 나감
   // 뒤·옆에서 따라오던 상대(막 찬 공의 정면이 아닌 선수)는 안 맞음. 골키퍼는 원래대로 막음
   if (ball.deflectT > 0) ball.deflectT -= dt;
@@ -1434,8 +1436,12 @@ function autoTrap(t) {
   const line = Math.max(...defs.map(p => dep(p.pos.x))); // 우리 최종 수비 라인 깊이
   if (dep(ball.pos.x) > line - 8) return; // 공이 라인 8m 안이면 안 함 (돌파 중)
   if (dep(ball.pos.x) < -5) return; // 공이 하프라인 5m 앞보다 멀면 의미 없음
-  const lurker = players.find(q => q.team === o.team && q !== o && !q.gk && dep(q.pos.x) > line - 6 && dep(q.pos.x) < line + 1 && Math.abs(q.pos.z) < 24); // 라인 6m 안에 선 상대(패스 받기 좋은 자리)
-  if (lurker) offsideTrap(t, true, 7); // 패스가 나오기 전에 미리 7m 올림
+  const lurker = players.find(q => q.team === o.team && q !== o && !q.gk && dep(q.pos.x) > line - 4 && dep(q.pos.x) < line + 1 && Math.abs(q.pos.z) < 24); // 라인 4m 안에 선 상대 (6m 밖은 라인이 올라가기 전에 받음)
+  if (!lurker) return;
+  // 곧 패스가 나올 것 같으면 안 함 (라인이 올라가기 전에 공이 떠나면 단독 찬스): AI 홀더는 패스 결정까지 0.9초 넘게 남았을 때, 사람 홀더는 그 공격수 쪽을 보고 있지 않을 때
+  if (o.team === 1 && !(o.decide > .9)) return;
+  if (o.team === 0) { const fx = Math.sin(o.face), fz = Math.cos(o.face), dx = lurker.pos.x - o.pos.x, dz = lurker.pos.z - o.pos.z, d = Math.hypot(dx, dz) || 1; if ((dx * fx + dz * fz) / d > .5) return; }
+  offsideTrap(t, true, 7); // 패스가 나오기 전에 미리 7m 올림
 }
 function updateTrap(dt) {
   for (const t of [0, 1]) {
