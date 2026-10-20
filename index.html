@@ -1519,7 +1519,17 @@ function pressThink(dt) {
     let bi = 0, bd = 1e9; pool.forEach((p, j) => { const dd = d2(p.pos, pt) - (role(p) === 'df' ? 3 : 0) - (p.markOf === q ? 6 : 0); if (dd < bd) { bd = dd; bi = j; } }); // 수비수 우선, 이미 따라붙던 선수는 계속(6m 넘게 가까운 선수가 있어야 교체)
     const p = pool.splice(bi, 1)[0]; p.target.copy(pt); p.speed = 7.6; p.pressRole = 'mark'; p.markOf = q;
   }
-  for (const p of players) if (p.pressRole !== 'mark') p.markOf = null;
+  for (const p of players) if (p.pressRole !== 'mark' && p.pressRole !== 'man') p.markOf = null;
+  // 맨마킹: 공이 우리 진영 30m 안에 있으면, 남은 수비수들은 우리 골대 25m 안의 상대 공격수(공 없는)에게 1대1로 붙어 다님 (골대 쪽 1.2m, 한 번 붙으면 계속)
+  if (bx > HL - 30) {
+    const dep2 = x => s * x, atts = players.filter(q => q.team === o.team && q !== o && !q.gk && dep2(q.pos.x) > HL - 25 && Math.abs(q.pos.z) < 24).sort((a, b) => dep2(b.pos.x) - dep2(a.pos.x));
+    for (const q of atts) {
+      const dfs = pool.filter(p => role(p) === 'df'); if (!dfs.length) break;
+      let bi = -1, bd = 1e9; dfs.forEach(p => { const dd = d2(p.pos, q.pos) - (p.markOf === q ? 6 : 0); if (dd < bd) { bd = dd; bi = pool.indexOf(p); } });
+      if (bi < 0 || bd > 22) continue;
+      const p = pool.splice(bi, 1)[0]; p.target.set(q.pos.x + s * 1.2, 0, q.pos.z); p.speed = 7.2; p.pressRole = 'man'; p.markOf = q;
+    }
+  }
   const opts = players.filter(q => q.team === o.team && q !== o && !q.gk && d2(q.pos, ball.pos) < 25)
     .sort((a, b) => d2(a.pos, ball.pos) - d2(b.pos, ball.pos)).slice(0, 3);
   for (const q of opts) {
