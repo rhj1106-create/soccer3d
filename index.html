@@ -1688,10 +1688,9 @@ function think(dt) {
     if (lx > -5) {
       // 번호별 역할: 9번 = 공 쪽 상대 수비수 등 뒤 공간, 10번 = 페널티 스폿 쪽 가운데, 6번 = 반대쪽 통로로 골대 쪽, 8번 = 찬 선수와 7m 거리 두고 살짝 뒤에서 다시 받을 준비
       const k = ball.lastKicker, kx = s * k.pos.x;
-      const cb = players.filter(q => q.team !== t && !q.gk && role(q) === 'df' && s * q.pos.x > kx - 5).sort((a, b) => { const mx = (k.pos.x + L.x) / 2, mz = (k.pos.z + L.z) / 2; return Math.hypot(a.pos.x - mx, a.pos.z - mz) - Math.hypot(b.pos.x - mx, b.pos.z - mz); })[0]; // 찬 선수와 공 갈 곳 사이에 가장 가까운 상대 수비수 (그 등 뒤로 9번이 뜀)
       const inward = -Math.sign(k.pos.z) || 1; // 찬 선수에서 가운데 쪽
       const spots = [
-        [9, cb ? Math.min(s * cb.pos.x + 6, HL - 6) : Math.min(lx + 16, HL - 6), cb ? cb.pos.z : side * 4], // 상대 수비수 등 뒤
+        [9, null, null], // 9번: 지금 자리에서 곧장 앞으로 (골대 쪽, 가운데로 살짝)
         [10, Math.min(lx + 18, HL - 11), 0],                                                          // 페널티 스폿 쪽 가운데
         [6, Math.min(lx + 12, HL - 8), -side * 9],                                                   // 반대쪽 통로
         [8, kx - 4, k.pos.z + inward * 6],                                                           // 찬 선수 살짝 뒤 옆 (리턴 패스)
@@ -1699,8 +1698,9 @@ function think(dt) {
       let cands = players.filter(q => q.team === t && q !== ball.recv && q !== k && !q.gk && role(q) !== 'df' && !(q.downT > 0) && !(q.tackleT > 0) && d2(q.pos, L) < 40 && !(userMove && q === controlled()));
       for (const [num, tx, tz] of spots) {
         if (!cands.length) break;
-        const pt = new V(s * clamp(tx, -HL + 2, HL - 2), 0, clamp(tz, -HW + 3, HW - 3));
-        const q = cands.find(c => c.num === num); if (!q) continue; // 번호마다 자기 역할만 (받을·찬 선수면 그 역할은 비워 둠)
+        const q = cands.find(c => c.num === num); if (!q) continue;
+        const fx = tx === null ? Math.min(s * q.pos.x + 20, HL - 8) : tx, fz = tz === null ? q.pos.z * .6 : tz;
+        const pt = new V(s * clamp(fx, -HL + 2, HL - 2), 0, clamp(fz, -HW + 3, HW - 3)); // 번호마다 자기 역할만 (받을·찬 선수면 그 역할은 비워 둠)
         cands = cands.filter(c => c !== q);
         q.target.copy(onside(q, pt)); q.speed = 7.5; q.supportRun = true; q.runSpot = pt;
       }
@@ -3468,7 +3468,7 @@ if (location.hostname === 'localhost') {
   const check = () => fetch('/version').then(r => r.text()).then(v => { if (ver === null) ver = v; else if (v !== ver) { ver = v; pendingReload = true; $('newVer').style.display = 'block'; } }).catch(() => {});
   setInterval(check, 3000);
   // 경기 중에는 절대 새로고침하지 않음(점수·경기가 날아가므로). 경기 시작 전(5초 안)에만 자동, 그 외엔 위 '새 버전' 표시를 클릭해야 적용
-  setInterval(() => { if (pendingReload && !replay && clock < 5 && kickoffLock >= 0) location.reload(); }, 500);
+  setInterval(() => { if (pendingReload && !replay && ((LAB && !TRAIN) || (clock < 5 && kickoffLock >= 0))) location.reload(); }, 500); // 연습 화면은 바로, 경기는 킥오프 전에만
   $('newVer').onclick = () => location.reload();
 }
 
