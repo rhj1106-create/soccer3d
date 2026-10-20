@@ -898,7 +898,9 @@ function updateBall(dt) {
       const cx = ball.pos.x + ux * along, cz = ball.pos.z + uz * along; // 공이 지나갈 지점
       const side = (cx - p.pos.x) * Math.cos(p.face) - (cz - p.pos.z) * Math.sin(p.face);
       p.stretchDir = -Math.sign(side) || 1; p.stretchT = tca + .45; p.stretchBal = true; p.stretchTo = new V(cx, 0, cz);
-    } else if (along > 0 && tca < .35 && lat > CFG.recvStretch && lat <= CFG.recvStretch + 1.8 && facing > -.2 && !(p.tackleT > 0) && !(p.downT > 0) && !(p.getUpT > 0) && p.team === ball.lastTeam && ball.pos.y < .6) {
+    } else if (along > 0 && tca < .35 && lat > CFG.recvStretch && lat <= CFG.recvStretch + 1.8 && facing > -.2 && !(p.tackleT > 0) && !(p.downT > 0) && !(p.getUpT > 0) && p.team === ball.lastTeam && ball.pos.y < .6
+      && Math.abs(-(p.pos.x - ball.pos.x) * uz + (p.pos.z - ball.pos.z) * ux) > 0 /* (옆으로 지나감) */ && sp / K > along + 4 /* 내 옆을 지나 계속 멀리 굴러갈 공 */ && intercept(p, 7.2).t > tca + .9 /* 뛰어가서 잡을 수 있는 공(공간패스)이면 슬라이딩 안 함 */
+      && (Math.hypot(p.vel.x, p.vel.z) < 2 || Math.abs(ux * p.vel.x + uz * p.vel.z) / Math.hypot(p.vel.x, p.vel.z) < .7)) { // 내가 달리는 방향과 공 방향이 45도 넘게 엇갈릴 때(옆을 가로지름)만
       // 뻗어도 안 닿는 공: 늦었으니 공이 지나갈 지점으로 슬라이딩 (잡아도 1초 균형 잡기)
       const cx = ball.pos.x + ux * (along + sp * .15), cz = ball.pos.z + uz * (along + sp * .15), dx = cx - p.pos.x, dz = cz - p.pos.z, d = Math.hypot(dx, dz) || 1;
       p.tackleDir = new V(dx / d, 0, dz / d); p.prevToe = null; p.slideSide = Math.random() < .5 ? 1 : -1; p.tackleT = .3; p.tackleCD = 1.3; p.face = Math.atan2(dx, dz); p.slideRecv = true;
@@ -1147,7 +1149,8 @@ function ballCrossX(X, dir) {
   for (let t = 0; t <= 4; t += step) {
     if (pos.y > BR + .02) { const f = 1 / (1 + AIR * (ball.dragMul || 1) * Math.hypot(vx, vy, vz) * step); vx *= f; vy *= f; vz *= f; }
     pos.x += vx * step; pos.z += vz * step; vy -= 9.8 * step; pos.y += vy * step;
-    if (pos.y <= BR) { pos.y = BR; vy = vy < -1.5 ? -vy * .45 : 0; if (!vy) { const f = Math.exp(-K * step); vx *= f; vz *= f; } }
+    if (Math.abs(pos.z) > HW || Math.abs(pos.x) > HL) { pos.x = clamp(pos.x, -HL + .5, HL - .5); pos.z = clamp(pos.z, -HW + .5, HW - .5); return { p, t: t + d2(p.pos, pos) / speed, pt: pos.setY(0) }; } // 공이 나가기 전 마지막 지점
+    if (pos.y <= BR) { pos.y = BR; if (vy < -1.5) { vy = -vy * .45; vx *= .55; vz *= .55; } else { vy = 0; const f = Math.exp(-K * step); vx *= f; vz *= f; } } // 실제 공처럼: 튈 때 수평 속도 45% 잃음
     if (dir * (pos.x - X) <= 0) return { z: pos.z, y: pos.y, t };
     if (Math.hypot(vx, vz) < .3) return null;
   }
@@ -1727,8 +1730,9 @@ function think(dt) {
     rv.target.copy(r.pt.lerp(ball.pos.clone().setY(0), .25)); rv.speed = 7;
   } else if (loose[t] && !(ball.recv && ball.recv.gk && ball.recv.team === t)) { // 골키퍼에게 간 공은 필드 선수가 쫓지 않음
     const lp = loose[t].p, bx = ball.pos.x - lp.pos.x, bz = ball.pos.z - lp.pos.z, fx = Math.sin(lp.face), fz = Math.cos(lp.face);
-    const fromBehind = bx * fx + bz * fz < -.5 && (-bx * ball.vel.x - bz * ball.vel.z) > 0 && Math.hypot(bx, bz) < 15 && Math.hypot(ball.vel.x, ball.vel.z) / K > Math.hypot(bx, bz) + 1.5; // 공이 나까지 굴러올 힘이 남아 있을 때만 (아니면 멈춰서 받음) // 공이 등 뒤에서 나에게 오는 중
+    const fromBehind = bx * fx + bz * fz < -.5 && (-bx * ball.vel.x - bz * ball.vel.z) > 0 && Math.hypot(bx, bz) < 15 && Math.hypot(ball.vel.x, ball.vel.z) / K > Math.hypot(bx, bz) + 1.5 && Math.hypot(ball.vel.x, ball.vel.z) > Math.hypot(lp.vel.x, lp.vel.z) + 2.5 && Math.hypot(bx, bz) > 2.5; // 공이 나까지 굴러올 힘이 있고, 나보다 확실히 빠르고, 아직 2.5m 넘게 떨어져 있을 때만 앞으로 달리며 받음 (아니면 멈춰서 돌아 받음: 같은 속도로 뒤따라오는 공을 끝까지 못 받는 일 방지) // 공이 등 뒤에서 나에게 오는 중
     if (lp === ball.recv && fromBehind && !lp.gk) { const bs = Math.hypot(ball.vel.x, ball.vel.z) || 1; lp.target.copy(loose[t].pt).addScaledVector(ball.vel, 2 / bs); lp.speed = 7.2; } // 등 뒤에서 오는 공: 멈추지 않고 공이 지나갈 선 위로 들어가 같은 방향으로 달리며 받음
+    else if (lp === ball.recv && lp.team === ball.lastTeam && !lp.gk && ball.pos.y > 1.2 && ball.vel.y > -6) { const L = flightLanding(); lp.target.set(clamp(L.x, -HL + .5, HL - .5), 0, clamp(L.z, -HW + .5, HW - .5)); lp.speed = 7.2; } // 떠서 오는 패스: 떨어질 곳으로
     else { lp.target.copy(chasePoint(lp, loose[t].pt)); lp.speed = 7.2; }
   }
 
@@ -1879,6 +1883,24 @@ function turnPenalty(p, pt) {
   return vl * (1 - (p.vel.x * dx + p.vel.z * dz) / (vl * dl)) / DEC;
 }
 function movePlayers(dt) {
+  if (!ISO_LAB && kickoffLock < 0 && !ball.dead && !edit) { // 공격할 때 서로 떨어지기 (이어달리기처럼 줄지어 붙지 않게)
+    const at = ball.owner ? ball.owner.team : ball.lastTeam, s = sgn(at);
+    if (at === 0 || at === 1) {
+      const busy = p => p === ball.owner || p === ball.recv || p === chaser[at] || p.rush || (userMove && p === controlled());
+      const box = p => s * p.target.x > HL - 16.5 && Math.abs(p.target.z) < 20.16;
+      const list = players.filter(p => p.team === at && !p.gk && !(p.downT > 0) && !(p.tackleT > 0));
+      for (let it = 0; it < 3; it++) for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j]; if (busy(a) && busy(b)) continue;
+        const gap = box(a) && box(b) ? 3 : 5;
+        const dx = b.target.x - a.target.x, dz = b.target.z - a.target.z, d = Math.hypot(dx, dz); if (d >= gap) continue;
+        const ux = d > .01 ? dx / d : (b.pos.x - a.pos.x) / (d2(a.pos, b.pos) || 1), uz = d > .01 ? dz / d : (b.pos.z - a.pos.z) / (d2(a.pos, b.pos) || 1);
+        if (busy(a)) { b.target.x = a.target.x + ux * gap; b.target.z = a.target.z + uz * gap; } // 공 가진·받을·쫓는 선수는 그대로, 다른 선수가 비켜남
+        else if (busy(b)) { a.target.x = b.target.x - ux * gap; a.target.z = b.target.z - uz * gap; }
+        else { const push = (gap - d) / 2; a.target.x -= ux * push; a.target.z -= uz * push; b.target.x += ux * push; b.target.z += uz * push; }
+      }
+      for (const p of list) { p.target.x = clamp(p.target.x, -HL + 1, HL - 1); p.target.z = clamp(p.target.z, -HW + 1, HW - 1); }
+    }
+  }
   if (!ISO_LAB && kickoffLock < 0 && !ball.dead && !edit) for (const t of [0, 1]) { // 떼로 몰리지 않게 (양 팀)
     const list = players.filter(p => p.team === t && !p.gk).sort((a, b) => d2(a.pos, ball.pos) - d2(b.pos, ball.pos));
     list.forEach((p, i) => {
@@ -2207,7 +2229,7 @@ function handleClick(e) {
 }
 addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (replay) { if (e.code.startsWith('Arrow') || e.code === 'Space') { e.preventDefault(); replayKey(e.code); } else if (e.code === 'KeyS' || e.code === 'KeyE') { if (!e.repeat) saveReplay(0, replay.all.length); } else if (e.code === 'KeyE') { if (!e.repeat) recEnd(); } else if (!e.repeat) endReplay(); return; } // 리플레이 조작 / S 녹화 시작 · E 녹화 끝(저장) / 건너뛰기
+  if (replay) { if (e.code.startsWith('Arrow') || e.code === 'Space') { e.preventDefault(); replayKey(e.code); } else if (e.code === 'KeyS' || e.code === 'KeyE') { if (!e.repeat) saveReplay(); } else if (e.code === 'KeyE') { if (!e.repeat) recEnd(); } else if (!e.repeat) endReplay(); return; } // 리플레이 조작 / S 녹화 시작 · E 녹화 끝(저장) / 건너뛰기
   if (e.code === 'KeyP' && !e.repeat && !edit && !LAB) { togglePause(); return; } // P: 경기 멈춤/재개 (멈춘 채 R로 리플레이 가능)
   if (e.code === 'KeyR' && !e.repeat && !edit && (!LAB || LAB === 'recv')) { startReplay(8); return; } // R: 최근 8초 리플레이 (받기 연습에서도)
   if (paused && stepMode && (e.code === 'Space' || e.code === 'ArrowRight')) { e.preventDefault(); if (!e.repeat) stepGo(e.code === 'ArrowRight' ? .5 : 0); return; }
@@ -2575,7 +2597,7 @@ function recvThink(dt) {
   if (rv.run > 0 && rv.phase === 'run') { const a = Math.PI / 2 + rv.runDeg * Math.PI / 180; mf.target.set(mf.pos.x + Math.sin(a) * 20, 0, mf.pos.z + Math.cos(a) * 20); mf.speed = rv.run; } // 패스 방향(+x) 기준 각도로 달림
   if (rv.run > 0 && rv.phase === 'pass' && !ball.owner && !(mf.tackleT > 0) && !(mf.stretchT > 0)) { // 공이 출발하면 경기와 똑같이: 공을 가장 빨리 만나는 지점으로 (등 뒤에서 오면 지나갈 선 위로 들어가 같은 방향으로)
     const ic = intercept(mf, 7.2), bx = ball.pos.x - mf.pos.x, bz = ball.pos.z - mf.pos.z, fx = Math.sin(mf.face), fz = Math.cos(mf.face), bs = Math.hypot(ball.vel.x, ball.vel.z) || 1;
-    const fromBehind = bx * fx + bz * fz < -.5 && (-bx * ball.vel.x - bz * ball.vel.z) > 0 && Math.hypot(bx, bz) < 15 && Math.hypot(ball.vel.x, ball.vel.z) / K > Math.hypot(bx, bz) + 1.5; // 공이 나까지 굴러올 힘이 남아 있을 때만 (아니면 멈춰서 받음)
+    const fromBehind = bx * fx + bz * fz < -.5 && (-bx * ball.vel.x - bz * ball.vel.z) > 0 && Math.hypot(bx, bz) < 15 && Math.hypot(ball.vel.x, ball.vel.z) / K > Math.hypot(bx, bz) + 1.5 && Math.hypot(ball.vel.x, ball.vel.z) > Math.hypot(lp.vel.x, lp.vel.z) + 2.5 && Math.hypot(bx, bz) > 2.5; // 공이 나까지 굴러올 힘이 있고, 나보다 확실히 빠르고, 아직 2.5m 넘게 떨어져 있을 때만 앞으로 달리며 받음 (아니면 멈춰서 돌아 받음: 같은 속도로 뒤따라오는 공을 끝까지 못 받는 일 방지)
     if (fromBehind) mf.target.copy(ic.pt).addScaledVector(ball.vel, 2 / bs); else mf.target.copy(chasePoint(mf, ic.pt));
     mf.speed = 7.2;
   }
@@ -3322,7 +3344,7 @@ function startReplay(sec, auto) {
   $('replayTag').style.display = 'block'; $('msg').style.display = 'none'; $('pauseTag').style.display = 'none';
   userMove = null; marker.visible = false;
   rpApply(replay.frames[0]); rpFocus.copy(ball.pos);
-  if (location.hostname === 'localhost' && !replay.fromFile) saveReplay(0, replay.all.length); // 보여 주는 리플레이는 전부 자동 저장 (S도 같은 동작)
+  if (location.hostname === 'localhost' && !replay.fromFile) saveReplay(); // 보여 주는 리플레이는 전부 자동 저장 (S도 같은 동작)
 }
 function endReplay() {
   if (!replay) return;
@@ -3430,7 +3452,7 @@ function saveReplay(from, to) {
   if (from !== undefined) all = all.slice(Math.max(0, from), Math.max(from + 1, to)); // 녹화 구간만
   const step = 3, frames = [];
   for (let i = 0; i < all.length; i += step) { const f = all[i]; frames.push({ p: f.ps.map(a => [+a[0].toFixed(2), +a[2].toFixed(2), +a[3].toFixed(2)]), b: [+f.ball[0].toFixed(2), +f.ball[1].toFixed(2), +f.ball[2].toFixed(2)] }); }
-  const data = { saved: new Date().toISOString(), score: $('sc').textContent, clock: +clock.toFixed(1), fps: 60 / step, cursor: from !== undefined ? 0 : replay ? Math.round((all.length - replay.frames.length + replay.pos) / step) : Math.round(all.length / step), players: players.map(p => ({ team: p.team, num: p.shirt || p.num, gk: !!p.gk })), note: 'p: [x, z, face] per player (players 순서), b: ball [x, y, z]. x: -52.5(우리 골대)~52.5(상대 골대), z: -34~34', frames };
+  const data = { saved: new Date().toISOString(), score: $('sc').textContent, clock: +clock.toFixed(1), fps: 60 / step, cursor: from !== undefined ? 0 : replay ? Math.round((all.length - replay.frames.length) / step) : Math.round(all.length / step), players: players.map(p => ({ team: p.team, num: p.shirt || p.num, gk: !!p.gk })), note: 'p: [x, z, face] per player (players 순서), b: ball [x, y, z]. x: -52.5(우리 골대)~52.5(상대 골대), z: -34~34', frames };
   const d0 = new Date(), two = n => String(n).padStart(2, '0'), json = JSON.stringify(data), name = 'replay_' + d0.getFullYear() + two(d0.getMonth() + 1) + two(d0.getDate()) + '_' + two(d0.getHours()) + two(d0.getMinutes()) + two(d0.getSeconds()) + '.json'; // 현지 시각
   if (location.hostname === 'localhost') fetch('/savereplay?name=' + name, { method: 'POST', body: json }).then(r => r.ok ? toast('리플레이 저장됨: ' + name + (replay ? ' (지금 보던 장면 기준)' : ' (최근 30초)')) : toast('저장 실패')).catch(() => toast('저장 실패'));
   else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = name; a.click(); toast('리플레이 파일 내려받음: ' + name); }
@@ -3467,7 +3489,7 @@ function loadSavedReplay(name) {
     if (replay) endReplay();
     replay = { frames, pos: 0, speed: .5, saved: rpSnap(), auto: false, savedMsg: $('msg').style.display, paused: false, all: frames, fromFile: name };
     $('replayTag').style.display = 'block'; $('msg').style.display = 'none'; $('pauseTag').style.display = 'none'; userMove = null; marker.visible = false;
-    replay.pos = Math.max(0, (d.cursor || 0) * dup - 8 * 60); // 저장할 때 보고 있던 장면 8초 전부터 시작 (30초 전 처음부터가 아니라)
+    replay.pos = Math.max(0, (d.cursor || 0) * dup); // 저장 당시 보여 준 리플레이 시작 장면부터 (←로 더 앞도 볼 수 있음)
     rpApply(frames[Math.floor(replay.pos)]); rpFocus.copy(ball.pos); toast('저장된 리플레이: ' + name + ' (저장 당시 보던 장면 8초 전부터)');
   }).catch(() => toast('리플레이 파일을 못 읽음'));
 }
@@ -3481,7 +3503,7 @@ $('pauseBtn').onclick = e => { e.stopPropagation(); togglePause(); };
 
 // 리플레이 중 S = 녹화 시작 지점 표시, E = 녹화 끝 → 그 구간만 저장
 function rpAbs() { return replay.all.length - replay.frames.length + Math.floor(replay.pos); }
-function recStart() { if (!replay) return; saveReplay(0, replay.all.length); } // (옛 S~E 구간 녹화 대신 전체 저장)
+function recStart() { if (!replay) return; saveReplay(); } // (옛 S~E 구간 녹화 대신 전체 저장)
 function recEnd() {
   if (!replay) return;
   if (replay.recFrom === undefined) { toast('먼저 S로 녹화 시작 지점을 찍으세요'); return; }
