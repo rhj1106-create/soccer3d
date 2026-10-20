@@ -89,7 +89,7 @@ b{color:#ffe14d}
 <div><h4>1단계 · 패스 / 킥 / 슈팅</h4>
 <b>왼쪽 클릭 · 팀원</b> 패스 (받은 선수를 조작)<br>
 <b>오른쪽 툭</b> 그 지점으로 짧은 땅볼 패스<br>
-<b>오른쪽 길게 누르기</b> 미들~롱킥 (길수록 멀리)<br>
+<b>오른쪽 길게 누르기</b> 미들~롱킥 (길수록 멀리, 21m 안은 낮고 빠른 강한 땅볼)<br>
 <b>오른쪽 더블클릭</b> 로빙킥<br>
 <b>센터링</b> 사이드(골라인 3칸 안·바깥 1/3)에서 박스 안 지점을 가리키고 오른쪽 길게 누르면 그 지점으로 높이 넘어감<br>
 <b>왼쪽+오른쪽 동시</b> 스루패스 (팀원이 미리 달려감)<br>
@@ -668,6 +668,7 @@ function kick(p, to, mode, pw = .7) {
     d = Math.min(d, p.gk ? 32 : 22); const T = clamp(d / 13, .4, 1.6);
     ball.vel.copy(dir).multiplyScalar(d / T); ball.vel.y = (BR - ball.pos.y + 4.9 * T * T) / T;
   }
+  else if (mode === 'drive') { ball.vel.copy(dir).multiplyScalar(Math.min(d * K + 9, 26)); ball.vel.y = .6; } // 강한 땅볼(오른쪽 누르기 21m 안): 받는 발에 초속 9m, 살짝만 뜸
   else if (mode === 'pass' && d <= PASS_GROUND) { // 땅볼 패스: 거리와 상관없이 받는 선수에게 초속 6m로 도착 (출발은 최대 22m/s, 슈팅보다 약하게)
     ball.vel.copy(dir).multiplyScalar(passV0(d)); ball.vel.y = 0;
   }
@@ -1064,7 +1065,10 @@ function flightLanding() {
 function landRecv(o, to) {
   const L = ball.vel.y > 0 ? flightLanding() : to.clone(); let best = null, bt = 1e9;
   // 땅볼(공간 패스): 목표 지점이 아니라 공이 굴러가는 길에 가장 빨리 닿는 팀원(달리는 속도 포함) / 띄운 공: 떨어질 곳에 가장 빨리 가는 팀원
-  for (const q of players) { if (q.team !== o.team || q === o || q.gk) continue; const t = ball.vel.y > 0 ? d2(q.pos, L) / 7.2 + turnPenalty(q, L) : intercept(q, 7.2).t; if (t < bt) { bt = t; best = q; } }
+  const cand = [];
+  for (const q of players) { if (q.team !== o.team || q === o || q.gk) continue; const t = ball.vel.y > 0 ? d2(q.pos, L) / 7.2 + turnPenalty(q, L) : intercept(q, 7.2).t; cand.push({ q, t }); if (t < bt) { bt = t; best = q; } }
+  // 앞·뒤 두 사람 사이로 가는 패스: 받을 수 있는 시간이 0.8초 안으로 비슷하면 '뒷사람'(공 찬 쪽에 가까운 사람)이 받고, 앞사람은 계속 전진 (내려와서 받으면 앞 공간이 사라짐)
+  if (best) { const s = sgn(o.team), near = cand.filter(c => c.t <= bt + .8); if (near.length > 1) { near.sort((a, b) => s * a.q.pos.x - s * b.q.pos.x); best = near[0].q; for (const c of near) if (c.q !== best) c.q.onwardT = 1.5; } }
   ball.recv = best; if (o.team === 0) manualCtrl = null;
 }
 function landing() {
@@ -1436,7 +1440,9 @@ function autoTrap(t) {
   const line = Math.max(...defs.map(p => dep(p.pos.x))); // 우리 최종 수비 라인 깊이
   if (dep(ball.pos.x) > line - 9) return; // 공 가진 상대가 라인 9m 안이면 안 함 (돌파 중)
   if (dep(ball.pos.x) < -5) return; // 공이 하프라인 5m 앞보다 멀면 의미 없음
-  const lurker = players.find(q => q.team === o.team && q !== o && !q.gk && dep(q.pos.x) > line - 4 && dep(q.pos.x) < line + 1 && Math.abs(q.pos.z) < 24); // 라인 4m 안에 선 상대 (6m 밖은 라인이 올라가기 전에 받음)
+  let lurker = players.find(q => q.team === o.team && q !== o && !q.gk && dep(q.pos.x) > line - 4 && dep(q.pos.x) < line + 1 && Math.abs(q.pos.z) < 24); // 라인 4m 안에 선 상대 (6m 밖은 라인이 올라가기 전에 받음)
+  // 또는: 상대 맨 앞 공격수가 그다음 상대보다 5m 이상 앞에 혼자 나가 있으면(고립) 그 선수를 노려 라인을 올림
+  if (!lurker) { const att = players.filter(q => q.team === o.team && q !== o && !q.gk).sort((a, b) => dep(b.pos.x) - dep(a.pos.x)); if (att.length > 1 && dep(att[0].pos.x) - dep(att[1].pos.x) >= 5 && dep(att[0].pos.x) > line - 10 && dep(att[0].pos.x) < line + 1) lurker = att[0]; }
   if (!lurker) return;
   // 곧 패스가 나올 것 같으면 안 함 (라인이 올라가기 전에 공이 떠나면 단독 찬스): AI 홀더는 패스 결정까지 0.9초 넘게 남았을 때, 사람 홀더는 그 공격수 쪽을 보고 있지 않을 때
   if (o.team === 1 && !(o.decide > .9)) return;
@@ -1451,7 +1457,7 @@ function updateTrap(dt) {
     tr.t -= dt;
     const presser = players.find(p => p.team === t && p.pressRole === 'press'), ctrl = t === 0 ? controlled() : null;
     for (const p of players) if (p.team === t && role(p) === 'df' && p !== presser && (p !== ctrl || !userMove) && !(p.downT > 0)) { // 조작 중인 수비수도 직접 이동 명령이 없으면 같이 올라감 (한 명이 남으면 라인이 안 올라감)
-      p.target.set(s > 0 ? Math.max(p.pos.x, tr.x) : Math.min(p.pos.x, tr.x), 0, p.pos.z); p.speed = 7.8; p.pressRole = 'trap-up';
+      p.target.set(s > 0 ? Math.max(p.pos.x, tr.x) : Math.min(p.pos.x, tr.x), 0, p.pos.z + (ball.pos.z - p.pos.z) * .4); p.speed = 7.8; p.pressRole = 'trap-up'; // 올라가면서 공 가진 상대 쪽으로
       p.trapPush = tr.t > .25 && s * (tr.x - p.pos.x) > .5; // 트랩은 한 줄로 '확' 올라가는 동작: 이동 계산 뒤 최소 초속 5.5m 보장 (movePlayers)
     }
   }
@@ -1628,7 +1634,7 @@ function think(dt) {
     }
     if (loose[t] && possTeam() === t) startOverlap(loose[t]);
     // 흘러가는 공(누가 찼든, 슈팅 제외): 쫓는 선수 말고도 공 25m 안에서 공보다 8m 넘게 뒤처지지 않은 공격수·미드필더 2명은 상대가 먼저 닿을 것 같아도 공이 갈 곳으로 끝까지 뜀 (양 팀)
-    if (loose[t] && !ball.dead && !ball.isShot) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && role(p) !== 'df' && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && d2(p.pos, ball.pos) < 25).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(chasePoint(p, r.t < 3.5 ? r.pt : loose[t].pt)); p.speed = 7.2; p.pressRole = 'chase'; }); }
+    if (loose[t] && !ball.dead && !ball.isShot) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && role(p) !== 'df' && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && !(p.onwardT > 0) && d2(p.pos, ball.pos) < 25).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 2).forEach(p => { const r = intercept(p, 7.2); p.target.copy(chasePoint(p, r.t < 3.5 ? r.pt : loose[t].pt)); p.speed = 7.2; p.pressRole = 'chase'; }); }
   }
   // 상대 AI 미드필더: 패스가 오는 동안(15m 안) 가끔 스스로 뒤를 확인
   const rv = ball.recv;
@@ -1676,6 +1682,8 @@ function think(dt) {
   // 스로인·코너킥 중에는 공 가진 선수가 움직이지 못함 (드리블 금지)
   if ((ball.setPiece || ball.inHands) && ball.owner) { ball.owner.target.copy(ball.owner.pos); ball.owner.speed = 0; }
   updateFeints(dt); // 페인팅 턴 진행 (속이는 동작 → 턴)
+  // 앞·뒤 사이 패스에서 '앞사람'으로 정해진 선수: 1.5초 동안 공을 쫓지 않고 12m 앞 공간으로 계속 전진 (다음 패스를 받을 공간 유지)
+  for (const p of players) if (p.onwardT > 0) { p.onwardT -= dt; if (ball.owner && ball.owner.team !== p.team) { p.onwardT = 0; continue; } if (p === ball.owner) { p.onwardT = 0; continue; } const s3 = sgn(p.team); p.target.copy(onside(p, new V(p.pos.x + s3 * 12, 0, p.pos.z))); p.speed = 7.2; p.pressRole = 'onward'; }
   // 한 컷씩 모드에서 사용자가 끌어 놓은 지점이 있는 우리 선수는 그리로 달림 (도착하면 해제, 공을 뺏기면 모두 해제)
   for (const p of players) if (p.plan) { if (p.team !== 0 || (ball.owner && ball.owner.team === 1) || d2(p.pos, p.plan) < .7 || p === ball.owner) p.plan = null; else { p.target.copy(onside(p, p.plan.clone())); p.speed = 7; } }
   // 오프사이드 위치(공격 중, 공 없는 팀원)에 있으면 무엇을 하던 중이든 전력으로 라인 안쪽 1.5m까지 되돌아옴 (패스가 오기 전에)
@@ -2005,7 +2013,7 @@ function letRunTurn(p) {
 // ---------- 오른쪽 버튼 킥 ----------
 const rk = { down: null, wait: null, skipUp: false };
 const RK_FULL = 1200; // 이 시간(ms) 누르면 최대 거리
-const stamRate = () => { const o = ball.owner, st = o && o.stam !== undefined ? o.stam : 1; return .5 + .5 * st; }; // 순간 체력이 낮을수록 게이지가 느리게 참 (바닥이면 절반 속도)
+const stamRate = () => 1; // 킥은 체력과 무관 // 순간 체력이 낮을수록 게이지가 느리게 참 (바닥이면 절반 속도)
 const rkPower = () => clamp(((performance.now() - rk.down) * stamRate() - 200) / (RK_FULL - 200), 0, 1); // 게이지: 0.2초부터 차기 시작
 addEventListener('mouseup', e => {
   if (e.button !== 2) return;
@@ -2052,7 +2060,7 @@ function rightLong(held) {
   // 센터링: 센터링 구역(상대 골라인 3칸 안, 바깥 1/3 폭)에서 안쪽(박스 쪽)을 가리키고 길게 누르면 누른 시간과 상관없이 마우스가 가리킨 지점으로 높이 띄워 넘김
   const s = sgn(own.team), inZone = !own.gk && s * own.pos.x > HL - 22.5 && Math.abs(own.pos.z) > HW / 3 && Math.abs(lastGround.z) < Math.abs(own.pos.z) - 3;
   if (inZone) { rkKick(own, lastGround.clone(), 'lob'); toast('센터링!'); return; } // 로빙으로 높이 (앞 수비 머리 위로)
-  rkKick(own, new V(own.pos.x + Math.sin(ang) * dist, 0, own.pos.z + Math.cos(ang) * dist), 'loft');
+  rkKick(own, new V(own.pos.x + Math.sin(ang) * dist, 0, own.pos.z + Math.cos(ang) * dist), dist <= 21 ? 'drive' : 'loft'); // 21m 안쪽은 낮고 빠른 강한 땅볼, 그 밖은 띄우는 롱킥
 }
 // 로빙킥(미들킥): 더블클릭한 지점으로 높이 띄워 부드럽게
 function rightLob() {
