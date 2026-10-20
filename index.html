@@ -78,6 +78,7 @@ b{color:#ffe14d}
 <a href="?lab=train"><b>1단계 · 패스 / 킥 / 슈팅</b><span>실제 11대11이지만 상대는 수비만 하고, 공을 뺏기면 바로 돌려줍니다. 패스·킥·슈팅을 마음껏 해 보세요.</span></a>
 <a href="?lab=shot"><b>1단계 · 슈팅 집중</b><span>골키퍼와 1대1. 거리·위치를 바꿔 가며 D 슈팅과 S·F 슈팅을 연습합니다.</span></a>
 <a href="?lab=turn"><b>2·3단계 · 드리블 · 패스 받기 / 턴</b><span>등 뒤에서 오는 패스를 받으며 턴, 흘리며 턴을 연습합니다.</span></a>
+<a href="?lab=recv"><b>2단계 · 패스 받기 (빗나간 공)</b><span>옆·뒤로 빗나간 패스를 어디까지 받는지 상황별로 보고 값을 조절합니다.</span></a>
 <a href="?lab=intercept"><b>4단계 · 가로채기 / 태클</b><span>상대 패스를 끊고 태클로 뺏는 연습입니다.</span></a>
 <a href="?lab=gk"><b>4단계 · 골키퍼</b><span>슈팅을 막는 연습. Z·X 다이빙을 익힙니다.</span></a>
 <a href="./"><b>실전 경기</b><span>11대11 정식 경기</span></a>
@@ -154,6 +155,7 @@ const CFG_DEFAULT = {
   turnTight: 3.5,                      // 공을 받을 때 상대가 이 거리(m) 안에 붙어 있으면 턴 불가
   loftBase: .5, loftPerM: .023,        // 오른쪽 클릭 띄움 킥 체공 시간(초) = 기본 + 거리(m) × 1m당 시간 → 길수록 높이 뜸
   loftMin: .55, loftMax: 1.6,          // 체공 시간 최소·최대(초)
+  recvClean: 1.0, recvStretch: 2.2, recvTurn: .35, // 패스 받기: 발밑(깨끗하게 받는 거리 m) · 다리 뻗어 받는 최대 거리(m) · 등 뒤에서 온 공을 돌아서는 시간(초)
   lobBase: .95, lobPerM: .045,         // 오른쪽 더블클릭 로빙킥(미들킥) 체공 시간(초) = 기본 + 거리 × 1m당 (0.9~2.6초) → 높이 떠서 부드럽게 떨어짐
 };
 const CFG = Object.assign({}, CFG_DEFAULT);
@@ -275,7 +277,7 @@ const role = p => p.gk ? 'gk' : p.num >= 2 && p.num <= 5 ? 'df' : p.num === 9 ||
 const dragT = (d, v0) => (Math.exp(AIR * d) - 1) / (AIR * v0);
 function saveCfg() { try { localStorage.setItem('soccerTuning', JSON.stringify(CFG)); } catch (e) {} }
 const LAB = new URLSearchParams(location.search).get('lab');
-const ISO_LAB = LAB === 'shot' || LAB === 'turn' || LAB === 'kick' || LAB === 'intercept' || LAB === 'gk'; // 선수 몇 명만 두는 연습 화면 (buildup은 22명 실제 경기 그대로)
+const ISO_LAB = LAB === 'shot' || LAB === 'turn' || LAB === 'recv' || LAB === 'kick' || LAB === 'intercept' || LAB === 'gk'; // 선수 몇 명만 두는 연습 화면 (buildup은 22명 실제 경기 그대로)
 const TRAIN = LAB === 'train'; // 전술 훈련 모드 (?lab=train): 상대는 수비만 하고, 공을 뺏으면 우리 선수에게 넘겨줌
 const d2 = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
@@ -575,7 +577,7 @@ function give(p) {
   if (ball.owner !== p) stepEvent((p.team === 0 ? '우리 ' : '상대 ') + p.shirt + '번 공 잡음');
   p.recvAt = performance.now(); // 받은 순간 (논스톱 슈팅 타이밍)
   p.fromRebound = !ball.owner && !!ball.lastKicker && ball.lastKicker.gk && ball.lastKicker.team !== p.team; // 골키퍼가 쳐낸 공을 받음
-  for (const q of players) q.letRun = false; // 공을 누가 잡든 흘리며 턴 예약은 끝남
+  for (const q of players) { q.letRun = false; q.recvTurned = false; } // 공을 누가 잡든 흘리며 턴 예약은 끝남
   if (ball.owner !== p) plog("공잡음", { 선수: (p.team ? "상대" : "우리") + p.num, 마지막으로찬선수: ball.lastKicker ? (ball.lastKicker.team ? "상대" : "우리") + ball.lastKicker.num : "-", 찬곳에서: ball.kickFrom && !ball.owner ? d2(ball.pos, ball.kickFrom).toFixed(1) : "-", 이전주인: ball.owner ? (ball.owner.team ? "상대" : "우리") + ball.owner.num : "없음" });
   if (ball.offside && ball.offside.has(p)) { ball.offside = null; return callOffside(p); }
   ball.offside = null; ball.setPiece = null; ball.unsavable = -1; ball.sureSave = -1; ball.inHands = false; ball.shotFromBox = false; ball.throwFlight = false;
@@ -610,7 +612,14 @@ const runBehind = p => { const v = Math.hypot(p.vel.x, p.vel.z); return v > 3 &&
 let REACH_DIR = true; // 받기 방향 규칙 (시험 비교용 스위치)
 const runReachOK = (p, d) => {
   if (!REACH_DIR) { const v = Math.hypot(p.vel.x, p.vel.z); if (v <= 3 || d < .5) return true; const ux = p.vel.x / v, uz = p.vel.z / v, rx = ball.pos.x - p.pos.x, rz = ball.pos.z - p.pos.z; return rx * ux + rz * uz >= -.2 && Math.abs(rx * uz - rz * ux) <= 1.1; }
-  if (p === ball.recv && p.team === ball.lastTeam && Math.hypot(p.vel.x, p.vel.z) < 3) return true; // 패스를 기다리는 받을 선수는 돌아서서 받음 (등 뒤에서 와도 됨)
+  if (p === ball.recv && p.team === ball.lastTeam && Math.hypot(p.vel.x, p.vel.z) < 3) { // 패스를 기다리는 받을 선수: 등 뒤(몸 방향 기준 뒤쪽)에서 오는 공은 먼저 돌아선 뒤에야 받음 (돌아서는 동안 지나가면 놓침)
+    const rx = ball.pos.x - p.pos.x, rz = ball.pos.z - p.pos.z;
+    if (d > .5 && rx * Math.sin(p.face) + rz * Math.cos(p.face) < -.2) {
+      if (!(p.turnT > 0) && !p.recvTurned && d < 15) { p.turnFrom = p.face; p.turnT = p.turnLen = CFG.recvTurn; p.face = Math.atan2(rx, rz); p.lockFace = false; p.recvTurned = true; p.recvTurnAt = performance.now(); }
+      return false;
+    }
+    return !(p.recvTurned && p.turnT > 0); // 돌아서는 중엔 아직 못 받음
+  }
   if (d < .5) return true;
   const v = Math.hypot(p.vel.x, p.vel.z), run = v > 3, ux = run ? p.vel.x / v : Math.sin(p.face), uz = run ? p.vel.z / v : Math.cos(p.face);
   const rx = ball.pos.x - p.pos.x, rz = ball.pos.z - p.pos.z, along = rx * ux + rz * uz, lat = Math.abs(rx * uz - rz * ux);
@@ -750,11 +759,12 @@ function restart(team, x, z, taker, label) {
   taker.face = Math.atan2(-x * .5, -z);
   for (const p of players) if (p.team !== team) {
     const dx = p.pos.x - x, dz = p.pos.z - z, d = Math.hypot(dx, dz);
-    if (d < 7) { const f = 7 / Math.max(d, .1); p.pos.x = x + dx * f; p.pos.z = z + dz * f; }
+    const keep = label === '스로인' || label === '코너킥' || label === '골킥' ? 7 : 9.15; // 프리킥(오프사이드·파울)은 9.15m
+    if (d < keep) { const f = keep / Math.max(d, .1); p.pos.x = clamp(x + dx * f, -HL + .5, HL - .5); p.pos.z = clamp(z + dz * f, -HW + .5, HW - .5); }
   }
   ball.pos.set(x, BR, z); give(taker); ball.stealT = 2; freeze = 0.5;
   ball.noOffside = label === '스로인' || label === '코너킥' || label === '골킥';
-  ball.setPiece = label === '스로인' ? 'throw' : label === '코너킥' ? 'corner' : label === '골킥' ? 'goalkick' : null;
+  ball.setPiece = label === '스로인' ? 'throw' : label === '코너킥' ? 'corner' : label === '골킥' ? 'goalkick' : 'free'; // free = 프리킥(오프사이드·파울): 찰 때까지 상대가 못 다가옴
   if (ball.setPiece === 'throw') { // 터치라인 밖에 서서 경기장 쪽을 봄 (라인 안으로 들어와 던질 수 없음)
     taker.pos.set(x, 0, Math.sign(z) * (HW + .5)); taker.face = Math.atan2(0, -Math.sign(z));
   } else if (ball.setPiece === 'corner') { // 코너에 공을 두고 그 뒤에서 경기장 중앙을 봄
@@ -765,7 +775,7 @@ function restart(team, x, z, taker, label) {
     taker.pos.set(x + s * .75, 0, z); taker.face = s > 0 ? -Math.PI / 2 : Math.PI / 2;
   }
   if (ball.setPiece) ball.stealT = 1e9;
-  const hint = { throw: ' - 팀원을 클릭해 던지기', corner: ' - 팀원 클릭 패스 / 우클릭 크로스', goalkick: ' - 팀원 클릭 패스 / 우클릭 롱킥' }[ball.setPiece];
+  const hint = { throw: ' - 팀원을 클릭해 던지기', corner: ' - 팀원 클릭 패스 / 우클릭 크로스', goalkick: ' - 팀원 클릭 패스 / 우클릭 롱킥', free: ' 프리킥 - 팀원 클릭 패스 / 우클릭 롱킥 / D 슈팅' }[ball.setPiece];
   toast(label + (team === 0 && hint ? hint : ''));
 }
 // 공이 나가면 2초 동안 그대로 두었다가 재개
@@ -888,7 +898,7 @@ function updateBall(dt) {
       const lat = p.team === ball.sureSave ? 2 * GW : Math.min(CFG.gkReach, 1.2 + 4.5 * Math.max(0, react - .15));
       // 골키퍼 다이빙 범위는 상대가 찬 공에만. 팀원이 준 공(백패스)은 발로 받으므로 필드 선수와 같음
       const gp = p.gk && p.diveVel && p.diveFrom ? p.diveFrom : p.pos; // 다이빙 중이면 날리기 전 위치로 판정 (다이빙은 모습만, 막는 범위는 예전 그대로)
-      const reach = p.gk && inBox && ball.lastTeam !== p.team ? (GK_BODY_ONLY ? d < (p.diveT > 0 ? 1.1 : GK_BODY) && ball.pos.y < 2.5 : d2(gp, ball.pos) < 1.5 || (Math.abs(ball.pos.x - gp.x) < 1.2 && Math.abs(ball.pos.z - gp.z) < lat)) : d < Math.min(p.team !== ball.lastTeam ? INTERCEPT_R : 9, p === ball.recv && p.team === ball.lastTeam ? 1.8 : jumping ? (ball.pos.y > 1.6 ? 1.6 : 1.8) : p === chaser[p.team] || p === ball.recv ? 1.4 : 1.0); /* 상대 공 가로채기는 보폭 1.5배(1.2m)까지만 */ // 팀원 패스를 받을 선수 1.8m, 잡기 집중 중 1.8m(머리 높이 1.6m), 쫓는 선수 1.4m
+      const reach = p.gk && inBox && ball.lastTeam !== p.team ? (GK_BODY_ONLY ? d < (p.diveT > 0 ? 1.1 : GK_BODY) && ball.pos.y < 2.5 : d2(gp, ball.pos) < 1.5 || (Math.abs(ball.pos.x - gp.x) < 1.2 && Math.abs(ball.pos.z - gp.z) < lat)) : d < Math.min(p.team !== ball.lastTeam ? INTERCEPT_R : 9, p === ball.recv && p.team === ball.lastTeam ? CFG.recvClean : jumping ? (ball.pos.y > 1.6 ? 1.6 : 1.8) : p === chaser[p.team] || p === ball.recv ? 1.4 : 1.0); /* 상대 공 가로채기는 보폭 1.5배(1.2m)까지만 */ // 팀원 패스를 받을 선수 1.8m, 잡기 집중 중 1.8m(머리 높이 1.6m), 쫓는 선수 1.4m
       if (reach && d < bd && ((p.gk && inBox) || runReachOK(p, d))) { // 달리는 선수 등 뒤로 지나가는 공은 발밑(0.5m)이 아니면 못 받음
         if (p !== ball.recv && !p.gk && !jumping && sp > 16 && Math.random() > .15) continue; // 빠른 공은 보통 놓침 (잡기 집중 중엔 안 놓침)
         bd = d; best = p;
@@ -897,7 +907,7 @@ function updateBall(dt) {
     // 쭉 뻗어 받기: 보통 범위는 벗어났지만 받을 선수·쫓는 선수 옆 2.4m 안을 무릎 높이 아래로 막 지나가는 공은 다리를 뻗어 받음
     // 넘어지거나 균형 잡는 시간 없음 (아주 빠른 공 20m/s 넘으면 반만 성공)
     if (STRETCH && !best && ball.pos.y < 1.0) {
-      let sb = null, sd = 2.4; // (상대 공 가로채기는 아래에서 1.2m로 제한)
+      let sb = null, sd = CFG.recvStretch; // (상대 공 가로채기는 아래에서 1.2m로 제한)
       for (const p of players) {
         if (p.gk || (p === ball.lastKicker && ball.kickT > 0) || p.downT > 0 || justKicked(p) || (sp > 14 && ball.pos.y < 1.8 && p.team !== ball.lastTeam)) continue;
         const mateOK = p.team === ball.lastTeam && !(ball.recv && d2(ball.recv.pos, ball.pos) < 4) && !(ball.kickFrom && d2(ball.pos, ball.kickFrom) < 6); // 받을 선수가 공 4m 안에 없고, 찬 지점에서 6m는 지난 뒤에만 다른 팀원이 뻗어 받음 (길목 팀원은 흘려보냄)
@@ -1841,7 +1851,7 @@ function movePlayers(dt) {
       if (p.team === 0) userMove = new V(clamp(p.pos.x + Math.sin(p.face) * 4, -HL + 1, HL - 1), 0, clamp(p.pos.z + Math.cos(p.face) * 4, -HW + 1, HW - 1)); } }
     if (p.dragBackCD > 0) p.dragBackCD -= dt;
     // 상대 골키퍼가 공을 손에 잡으면 5m, 상대 스로인·코너킥이면 9m: 그 안의 선수는 공을 보면서 뒷걸음질로 물러남
-    const keepOff = !ball.owner || ball.owner.team === p.team ? 0 : ball.inHands ? 5 : ball.setPiece === 'throw' || ball.setPiece === 'corner' ? 9 : 0;
+    const keepOff = !ball.owner || ball.owner.team === p.team ? 0 : ball.inHands ? 5 : ball.setPiece === 'throw' || ball.setPiece === 'corner' ? 9 : ball.setPiece === 'free' ? 9.15 : 0;
     if (keepOff) {
       const o = ball.owner, ox = p.pos.x - o.pos.x, oz = p.pos.z - o.pos.z, od = Math.hypot(ox, oz) || .1;
       if (od < keepOff) {
@@ -2356,6 +2366,10 @@ addEventListener('keydown', e => {
   } else if (LAB === 'turn') {
     if (e.code === 'KeyR') turnReset();
     if (e.code === 'KeyP') turnPass();
+  } else if (LAB === 'recv') {
+    if (e.code === 'KeyR') recvReset();
+    if (e.code === 'KeyP') recvPass();
+    if (e.code === 'KeyN') recvNext();
   }
 });
 
@@ -2446,6 +2460,97 @@ function labViewOffset() {
   camera.setViewOffset(innerWidth + P, innerHeight, P, 0, innerWidth, innerHeight);
 }
 
+
+// ---------- 패스 받기 연습 화면 (?lab=recv): 빗나간 패스를 어디까지 받나 ----------
+// 4번이 6번에게 패스. 패스가 6번 옆으로 얼마나 빗나가는지(옆 오차), 6번이 어느 쪽을 보고 있는지, 공 속도를 바꿔 가며
+// 발밑에서 깨끗이 받는지 / 다리를 뻗어 받는지 / 돌아서서 받는지 / 놓치는지 본다. 값(발밑 거리·뻗는 거리·돌아서는 시간)은 경기에도 적용
+const rv = { off: 1.0, faceDeg: 0, speed: 0, dist: 15, phase: 'ready', t: 0, result: null, info: '', resetT: 0, auto: false, log: [], minD: 99, tally: { 발밑: 0, 뻗어: 0, 돌아서: 0, 놓침: 0, 짧음: 0 } };
+const RV_SCENE = [['off', '패스 옆 오차 (m, 6번 기준 옆으로 빗나감)', 0, 3.5, .1], ['faceDeg', '6번이 보는 방향 (0 = 공 쪽, 180 = 등진 채)', 0, 180, 15], ['speed', '패스 세기 보정 (m/s, 0 = 경기 기본 세기)', -8, 8, 1], ['dist', '패스 거리 (m)', 8, 30, 1]];
+const RV_TUNE = [['recvClean', '발밑에서 그냥 받는 거리 (m)', .5, 2, .1], ['recvStretch', '다리 뻗어 받는 최대 거리 (m)', 1, 3, .1], ['recvTurn', '등 뒤 공: 돌아서는 시간 (초)', .1, .8, .05]];
+const RV_STEPS = [[0, 0], [.5, 0], [1, 0], [1.5, 0], [2, 0], [2.5, 0], [3, 0], [0, 180], [1, 180], [1.5, 180], [2, 180], [1, 90], [2, 90]]; // N키: 상황 하나씩 넘기기 (옆 오차, 보는 방향)
+const rvP = () => ({ cb: players.find(p => p.team === 0 && p.num === 4), mf: players.find(p => p.team === 0 && p.num === 6) });
+function recvInit() {
+  $('help').style.display = 'none'; $('editBtn').style.display = 'none'; $('lab').style.display = 'block';
+  let html = '<h3>패스 받기 (빗나간 공)</h3><div class="keys">P = 4번이 6번 쪽으로 패스 (옆 오차만큼 빗나감) · N = 다음 상황 · R = 다시</div><div id="labOut"></div><h4>상황</h4>';
+  for (const s of RV_SCENE) html += slider('rv', s, rv[s[0]]);
+  html += '<label><input type="checkbox" id="rv_slow"> 느리게 보기 (0.3배)</label><label><input type="checkbox" id="rv_auto"> 자동: 결과 나오면 다음 상황으로</label><h4>받기 값 (경기에도 적용)</h4>';
+  for (const t of RV_TUNE) html += slider('cfg', t, CFG[t[0]]);
+  html += '<div class="btns"><button id="rvPass">패스 (P)</button><button id="rvNext">다음 상황 (N)</button><button id="rvReset">다시 (R)</button><button id="rvDefault">기본값으로</button></div><div id="rvLog" style="font-size:12px;line-height:1.5;margin-top:6px"></div>';
+  $('lab').innerHTML = html;
+  for (const [k] of RV_SCENE) $('rv_' + k).oninput = e => { rv[k] = +e.target.value; $('rv_' + k + '_v').textContent = rv[k]; recvReset(); };
+  for (const [k] of RV_TUNE) $('cfg_' + k).oninput = e => { CFG[k] = +e.target.value; $('cfg_' + k + '_v').textContent = CFG[k]; saveCfg(); };
+  $('rv_slow').onchange = e => { labSlow = e.target.checked; e.target.blur(); };
+  $('rv_auto').onchange = e => { rv.auto = e.target.checked; e.target.blur(); if (rv.auto && rv.phase === 'ready') recvPass(); };
+  $('rvPass').onclick = e => { recvPass(); e.target.blur(); };
+  $('rvNext').onclick = e => { recvNext(); e.target.blur(); };
+  $('rvReset').onclick = e => { recvReset(); e.target.blur(); };
+  $('rvDefault').onclick = e => { e.target.blur(); for (const [k] of RV_TUNE) CFG[k] = CFG_DEFAULT[k]; saveCfg(); recvInit(); };
+  recvReset();
+}
+function recvReset() {
+  const { cb, mf } = rvP();
+  for (const p of players) {
+    const show = p === cb || p === mf;
+    p.g.visible = show; if (!show) p.pos.set(HL - 1, 0, HW + 1);
+    p.vel.set(0, 0, 0); p.diveT = p.jumpT = p.tackleT = p.downT = p.overlapT = p.turnT = p.stretchT = p.scanT = 0; p.recvTurned = false; p.lockFace = false;
+  }
+  freeze = 0; pendingKickoff = -1; kickoffLock = -1; ball.dead = null; ball.inNet = 0; manualCtrl = null; userMove = null;
+  $('msg').style.display = 'none';
+  cb.pos.set(-20 - rv.dist, 0, 0); cb.face = Math.PI / 2;
+  mf.pos.set(-20, 0, 0); mf.face = -Math.PI / 2 + rv.faceDeg * Math.PI / 180; mf.lockFace = true; // 0도 = 공(4번) 쪽을 봄
+  ball.vel.set(0, 0, 0); ball.pos.set(cb.pos.x + .75, BR, cb.pos.z); give(cb); ball.stealT = 1e9;
+  Object.assign(rv, { phase: 'ready', t: 0, result: null, info: '', resetT: 0, minD: 99, turned: false });
+  recvShow();
+}
+function recvPass() {
+  const { cb, mf } = rvP(); if (ball.owner !== cb || rv.phase !== 'ready') return;
+  const to = new V(mf.pos.x, 0, mf.pos.z + rv.off); // 옆으로 오차만큼 빗나간 지점으로
+  kick(cb, to, 'pass'); ball.recv = mf;
+  const d = d2(ball.pos, to), ux = (to.x - ball.pos.x) / d, uz = (to.z - ball.pos.z) / d;
+  rv.v0 = Math.max(4, passV0(d) + rv.speed); ball.vel.set(ux * rv.v0, 0, uz * rv.v0); // 경기 기본 세기 + 보정
+  rv.phase = 'pass'; rv.t = 0; rv.minD = 99;
+}
+function recvNext() { // 미리 정한 상황을 하나씩 넘김
+  const cur = RV_STEPS.findIndex(([o, f]) => Math.abs(o - rv.off) < .01 && f === rv.faceDeg);
+  const [o, f] = RV_STEPS[(cur + 1) % RV_STEPS.length];
+  rv.off = o; rv.faceDeg = f; $('rv_off').value = o; $('rv_off_v').textContent = o; $('rv_faceDeg').value = f; $('rv_faceDeg_v').textContent = f;
+  recvReset(); if (rv.auto) recvPass();
+}
+function recvThink(dt) {
+  const { cb, mf } = rvP();
+  for (const p of players) { p.target.copy(p.pos); p.speed = 0; }
+  if (ball.owner === mf && rv.phase === 'own') { mf.target.set(mf.pos.x + Math.sin(mf.face) * 3, 0, mf.pos.z + Math.cos(mf.face) * 3); mf.speed = 3; } // 받은 뒤 천천히 몰고 감
+  if (rv.phase === 'pass') {
+    rv.t += dt; rv.minD = Math.min(rv.minD, d2(mf.pos, ball.pos)); if (mf.recvTurned) rv.turned = true;
+    if (ball.owner === mf) {
+      const d = d2(mf.pos, ball.snapFrom || ball.pos), turned = !!rv.turned;
+      rv.result = mf.stretchT > 0 ? '뻗어' : turned ? '돌아서' : '발밑';
+      rv.info = `잡은 순간 공까지 ${d.toFixed(2)}m · ${rv.result === '뻗어' ? '다리 뻗어 받음' : rv.result === '돌아서' ? '등 뒤 공: 돌아선 뒤 받음' : '발밑에서 그대로 받음'}${turned && rv.result === '뻗어' ? ' (돌아선 뒤)' : ''}`;
+    } else if (ball.owner === cb) { rv.result = '놓침'; rv.info = '공이 4번에게 되돌아감'; }
+    else if (rv.t > 1 && Math.hypot(ball.vel.x, ball.vel.z) < .5) { rv.result = '짧음'; rv.info = `공이 ${rv.minD.toFixed(2)}m 앞에서 멈춤 (패스가 짧음)`; }
+    else if (rv.t > 1 && d2(mf.pos, ball.pos) > 8 && rv.minD < d2(mf.pos, ball.pos)) { rv.result = '놓침'; rv.info = `가장 가까웠던 거리 ${rv.minD.toFixed(2)}m — 못 받고 지나감${rv.turned ? ' (돌아서는 사이)' : ''}`; }
+    if (rv.result) {
+      rv.phase = 'own'; rv.tally[rv.result]++; rv.resetT = rv.auto ? 1.5 : 3;
+      rv.log.unshift(`오차 ${rv.off}m · 방향 ${rv.faceDeg}° · ${rv.v0.toFixed(0)}m/s → <b>${rv.result}</b>`); if (rv.log.length > 12) rv.log.pop();
+    }
+  }
+  if (rv.phase === 'pass' && (ball.dead || pendingKickoff >= 0 || rv.t > 6)) { recvReset(); return mf; }
+  if (rv.resetT > 0 && (rv.resetT -= dt) <= 0) { if (rv.auto) recvNext(); else recvReset(); }
+  recvShow();
+  return mf;
+}
+function recvShow() {
+  $('labOut').innerHTML =
+    `단계: ${{ ready: '패스 대기', pass: '공 이동 중', own: '결과' }[rv.phase]}<br>` +
+    `결과: <b>${rv.result || '-'}</b><br>${rv.info || '-'}<br>` +
+    `누적: 발밑 ${rv.tally.발밑} · 뻗어 ${rv.tally.뻗어} · 돌아서 ${rv.tally.돌아서} · 놓침 ${rv.tally.놓침} · 짧음 ${rv.tally.짧음}`;
+  const lg = $('rvLog'); if (lg) lg.innerHTML = rv.log.join('<br>');
+}
+function recvCamera() { // 6번 주변을 비스듬히 위에서
+  const { mf } = rvP();
+  camera.position.set(mf.pos.x - 4, 11 * zoom, mf.pos.z + 14 * zoom); camera.lookAt(mf.pos.x - 4, 0, mf.pos.z);
+  labViewOffset();
+}
 // ---------- 빌드업 턴 연습 (?lab=buildup): 22명 실제 경기 그대로, 4번 → 6번 패스 장면 ----------
 const bd = { phase: 'ready', t: 0, result: null, info: '', resetT: 0, tally: { 성공: 0, 빼앗김: 0, 가로채임: 0, 기타: 0 } };
 function bdInit() {
@@ -2764,7 +2869,7 @@ setSpeed(GAME_SPEED); for (const b of document.querySelectorAll("#speed button[d
 const focus = new V();
 let last = performance.now();
 placeForKickoff(0);
-if (LAB === 'shot') labInit(); else if (LAB === 'turn') turnInit(); else if (LAB === 'buildup') bdInit(); else if (LAB === 'kick') kickInit(); else if (LAB === 'intercept') icInit(); else if (LAB === 'gk') glInit();
+if (LAB === 'shot') labInit(); else if (LAB === 'turn') turnInit(); else if (LAB === 'recv') recvInit(); else if (LAB === 'buildup') bdInit(); else if (LAB === 'kick') kickInit(); else if (LAB === 'intercept') icInit(); else if (LAB === 'gk') glInit();
 if (TRAIN) { // 전술 훈련 모드 표시
   const b = document.createElement('div');
   b.style.cssText = 'position:fixed;top:52px;left:50%;transform:translateX(-50%);color:#fff;font-size:13px;font-weight:bold;background:rgba(30,90,200,.6);padding:4px 12px;border-radius:8px;pointer-events:none';
@@ -2797,7 +2902,7 @@ function frame(now) {
     if (freeze <= 0 && pendingKickoff >= 0) { $('msg').style.display = 'none'; const t = pendingKickoff; pendingKickoff = -1; placeForKickoff(t); }
   }
   let ctrl = controlled();
-  if (ISO_LAB) { ctrl = LAB === 'turn' ? turnThink(dt) : LAB === 'kick' ? kickThink(dt) : LAB === 'intercept' ? icThink(dt) : LAB === 'gk' ? glThink(dt) : labThink(dt); movePlayers(dt); }
+  if (ISO_LAB) { ctrl = LAB === 'turn' ? turnThink(dt) : LAB === 'recv' ? recvThink(dt) : LAB === 'kick' ? kickThink(dt) : LAB === 'intercept' ? icThink(dt) : LAB === 'gk' ? glThink(dt) : labThink(dt); movePlayers(dt); }
   else if (freeze <= 0 && !replay && !paused) {
     if (ball.dead && (ball.dead.t -= dt) <= 0) { const a = ball.dead.args; ball.dead = null; restart(...a); }
     clock += dt;
@@ -2954,7 +3059,7 @@ function frame(now) {
   const pt = possTeam(), ol = pt === 0 ? offsideLine(0) : pt === 1 ? -offsideLine(1) : 0; // 상대 공격 땐 우리 쪽 라인 (트랩 타이밍용)
   offLine.visible = ol !== 0; offLine.position.x = ol;
 
-  if (replay) replayCamera(); else if (LAB === 'turn') turnCamera(); else if (LAB === 'shot') labCamera(); else if (LAB === 'gk') glCamera();
+  if (replay) replayCamera(); else if (LAB === 'turn') turnCamera(); else if (LAB === 'recv') recvCamera(); else if (LAB === 'shot') labCamera(); else if (LAB === 'gk') glCamera();
   else {
     focus.lerp(ball.pos, Math.min(1, dt * 3));
     camera.position.set(focus.x * .92, 24 * zoom, focus.z * .4 + 36 * zoom);
@@ -3304,7 +3409,7 @@ const flagMan = new THREE.Group();
 flagMan.visible = false; scene.add(flagMan);
 function updateFlag(dt) {
   if (flagT > 0) { flagT -= dt; const arm = flagMan.userData.arm; arm.rotation.z = Math.min(0, arm.rotation.z + dt * 3); flagMan.rotation.y = Math.atan2(ball.pos.x - flagMan.position.x, ball.pos.z - flagMan.position.z); if (flagT <= 0) { flagMan.visible = false; arm.rotation.z = -.6; } }
-  if (msgT > 0) { msgT -= dt; if (msgT <= 0 && !freeze) $('msg').style.display = 'none'; }
+  if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').style.display = 'none'; }
 }
 </script>
 </body>
