@@ -28,6 +28,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b1a10;font-family:'M
 #train a span{opacity:.85;line-height:1.5}
 #rpList{margin:0 0 10px;border-bottom:1px solid rgba(255,255,255,.2);padding-bottom:8px;max-height:220px;overflow:auto}
 #rpList h4{margin:0 0 6px;font-size:14px;color:#ffd54f}
+#rpList .rpNum{cursor:pointer;text-decoration:underline dotted;padding:2px 4px} #rpList .rpNum:hover{background:#333}
 #rpList div{display:flex;gap:8px;align-items:center;margin:4px 0;font-size:13px}
 #rpList button{font-family:inherit;font-size:12px;padding:2px 8px;border:0;border-radius:6px;background:#1e88e5;color:#fff;cursor:pointer}
 #rpList a{display:inline;background:none;padding:0;margin:0;color:#9be7ff;text-decoration:underline}
@@ -3431,8 +3432,11 @@ function saveReplay(from, to) {
 function loadReplayList() {
   const box = $('rpList'); if (location.hostname !== 'localhost') { box.innerHTML = ''; return; }
   fetch('/replays').then(r => r.json()).then(list => {
-    box.innerHTML = '<h4>저장된 리플레이 (리플레이 중 S~E 구간 저장)</h4>' + (list.length ? list.map(f => '<div><span>' + f.replace('replay_', '').replace('.json', '').replace('_', ' ') + '</span><button data-f="' + f + '">3D 보기</button><a href="replays/view.html?f=' + f + '" target="_blank">2D 보기</a></div>').join('') : '<div>아직 없음</div>');
+    const today = new Date(), tag = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+    const short = f => { const m = f.match(/replay_(\d{8})_(\d{6})/); if (!m) return f; return (m[1] === tag ? '' : m[1].slice(4, 6) + '/' + m[1].slice(6, 8) + ' ') + m[2]; }; // 오늘 것은 시각 6자리만, 다른 날은 월/일 + 시각
+    box.innerHTML = '<h4>저장된 리플레이 (리플레이 중 S~E 구간 저장) — 번호 클릭 = 복사</h4>' + (list.length ? list.map(f => '<div><span class="rpNum" data-n="' + short(f).replace(/\D/g, '').slice(-6) + '" title="클릭하면 번호 복사">' + short(f) + '</span><button data-f="' + f + '">3D 보기</button><a href="replays/view.html?f=' + f + '" target="_blank">2D 보기</a></div>').join('') : '<div>아직 없음</div>');
     for (const b of box.querySelectorAll('button')) b.onclick = e => { e.stopPropagation(); loadSavedReplay(b.dataset.f); };
+    for (const sp of box.querySelectorAll('.rpNum')) sp.onclick = e => { e.stopPropagation(); const n = sp.dataset.n; (navigator.clipboard ? navigator.clipboard.writeText(n) : Promise.reject()).then(() => toast('복사됨: ' + n)).catch(() => { prompt('번호를 복사하세요', n); }); };
   }).catch(() => { box.innerHTML = ''; });
 }
 function loadSavedReplay(name) {
