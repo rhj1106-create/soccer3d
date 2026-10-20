@@ -577,14 +577,15 @@ function give(p) {
   if (ball.owner !== p) stepEvent((p.team === 0 ? '우리 ' : '상대 ') + p.shirt + '번 공 잡음');
   p.recvAt = performance.now(); // 받은 순간 (논스톱 슈팅 타이밍)
   p.fromRebound = !ball.owner && !!ball.lastKicker && ball.lastKicker.gk && ball.lastKicker.team !== p.team; // 골키퍼가 쳐낸 공을 받음
-  for (const q of players) { q.letRun = false; q.recvTurned = false; } // 공을 누가 잡든 흘리며 턴 예약은 끝남
+  for (const q of players) { q.letRun = false; q.recvTurned = false; q.stretchTo = null; } // 공을 누가 잡든 흘리며 턴 예약은 끝남
   if (ball.owner !== p) plog("공잡음", { 선수: (p.team ? "상대" : "우리") + p.num, 마지막으로찬선수: ball.lastKicker ? (ball.lastKicker.team ? "상대" : "우리") + ball.lastKicker.num : "-", 찬곳에서: ball.kickFrom && !ball.owner ? d2(ball.pos, ball.kickFrom).toFixed(1) : "-", 이전주인: ball.owner ? (ball.owner.team ? "상대" : "우리") + ball.owner.num : "없음" });
   if (ball.offside && ball.offside.has(p)) { ball.offside = null; return callOffside(p); }
   ball.offside = null; ball.setPiece = null; ball.unsavable = -1; ball.sureSave = -1; ball.inHands = false; ball.shotFromBox = false; ball.throwFlight = false;
   if (p.team === 0) manualCtrl = null; // 우리가 공을 잡으면 공 가진 선수가 조작 대상
   // 첫 터치: 공이 발 앞(0.75m)에서 멀리 있을수록 끌어오는 데 시간이 걸림 (1m당 0.15초, 최대 0.35초)
   const foot = Math.hypot(p.pos.x + Math.sin(p.face) * .75 - ball.pos.x, p.pos.z + Math.cos(p.face) * .75 - ball.pos.z, ball.pos.y - BR); // 가슴·머리로 받은 공은 높이 차이만큼 떨어지는 시간
-  ball.snapFrom = ball.pos.clone(); ball.snapLen = ball.snapT = foot > .3 && !ball.setPiece ? (p.stretchT > 0 ? .5 : Math.min(.35, foot * .15)) : 0; // 다리 뻗어 받은 공은 0.5초에 걸쳐 발밑으로 끌어옴
+  ball.snapFrom = ball.pos.clone(); ball.snapLen = ball.snapT = foot > .3 && !ball.setPiece && !(p.stretchT > 0) ? Math.min(.35, foot * .15) : 0;
+  if (p.stretchT > 0 && foot > .3) { ball.gatherT = ball.gatherLen = .5; ball.gatherAt = ball.pos.clone(); } else ball.gatherT = 0; // 다리 뻗어 받은 공: 공은 그 자리에 두고 선수가 0.5초에 걸쳐 발을 옮겨 감
   ball.owner = p; ball.recv = null; ball.keepRecv = null; ball.lastTeam = p.team; ball.vel.set(0, 0, 0); ball.dragMul = 1;
   ball.stealT = 0.6; p.decide = 0.7 + Math.random() * 0.8;
   // 골키퍼가 준 공을 받은 팀원: 1초 동안 안정적으로 키핑 (빼앗기지 않음)
@@ -801,7 +802,12 @@ function updateBall(dt) {
     else {
       // 발 앞(골키퍼가 손에 들면 가슴 앞)
       const r = ball.inHands ? .38 : .75, fx = o.pos.x + Math.sin(o.face) * r, fy = ball.inHands ? 1.15 : BR, fz = o.pos.z + Math.cos(o.face) * r;
-      if (ball.snapT > 0) { // 첫 터치: 공이 한 번에 붙지 않고, 닿은 자리에서 발 앞(손)까지 끌려 들어오며 멈춤
+      if (ball.gatherT > 0) { // 뻗어 받은 공: 공은 멈춘 자리에, 선수가 그쪽으로 발을 옮김 (발 앞 0.75m가 공 자리에 오도록)
+        const k = Math.min(1, dt / ball.gatherT); ball.gatherT -= dt;
+        const tx = ball.gatherAt.x - Math.sin(o.face) * r, tz = ball.gatherAt.z - Math.cos(o.face) * r;
+        o.pos.x += (tx - o.pos.x) * k; o.pos.z += (tz - o.pos.z) * k; o.vel.set(0, 0, 0);
+        ball.pos.set(ball.gatherAt.x, BR, ball.gatherAt.z);
+      } else if (ball.snapT > 0) { // 첫 터치: 공이 한 번에 붙지 않고, 닿은 자리에서 발 앞(손)까지 끌려 들어오며 멈춤
         ball.snapT -= dt; const k = 1 - (Math.max(0, ball.snapT) / ball.snapLen) ** 2;
         ball.pos.set(ball.snapFrom.x + (fx - ball.snapFrom.x) * k, ball.snapFrom.y + (fy - ball.snapFrom.y) * k, ball.snapFrom.z + (fz - ball.snapFrom.z) * k);
       } else ball.pos.set(fx, fy, fz);
@@ -874,6 +880,26 @@ function updateBall(dt) {
   const throwing = (ball.setPiece === 'throw' && ball.owner) || ball.throwFlight;
   if (Math.abs(bz) > HW + BR && !throwing) return outBall(1 - ball.lastTeam, clamp(bx, -HL + 1, HL - 1), Math.sign(bz) * (HW - .3), null, '스로인');
 
+  // 사전 뻗기: 받을 선수 옆으로 지나갈 것 같은 공(발밑 거리 밖, 뻗는 거리 + 0.5m 안)은 0.3초 전부터 미리 다리를 쭉 뻗어 기다림 (발레리나처럼)
+  if (!ball.owner && ball.recv && ball.pos.y < 1 && sp > 4 && !(ball.recv.stretchT > 0) && !(ball.recv.wobT > 0) && Math.hypot(ball.recv.vel.x, ball.recv.vel.z) < 3) {
+    const p = ball.recv, ux = ball.vel.x / sp, uz = ball.vel.z / sp, rx = p.pos.x - ball.pos.x, rz = p.pos.z - ball.pos.z;
+    const along = rx * ux + rz * uz, lat = Math.abs(rx * uz - rz * ux), tca = along / sp; // 가장 가까워지는 지점까지 거리·옆 오차·시간
+    const facing = -(rx * Math.sin(p.face) + rz * Math.cos(p.face)); // 몸 앞쪽에서 오는 공인가 (등 뒤면 먼저 돌아섬)
+    if (along > 0 && tca < .3 && lat > CFG.recvClean && lat <= CFG.recvStretch && facing > -.2) {
+      const cx = ball.pos.x + ux * along, cz = ball.pos.z + uz * along; // 공이 지나갈 지점
+      const side = (cx - p.pos.x) * Math.cos(p.face) - (cz - p.pos.z) * Math.sin(p.face);
+      p.stretchDir = -Math.sign(side) || 1; p.stretchT = tca + .45; p.stretchBal = true; p.stretchTo = new V(cx, 0, cz);
+    } else if (along > 0 && tca < .35 && lat > CFG.recvStretch && lat <= CFG.recvStretch + 1.8 && facing > -.2 && !(p.tackleT > 0) && !(p.downT > 0) && !(p.getUpT > 0) && p.team === ball.lastTeam && ball.pos.y < .6) {
+      // 뻗어도 안 닿는 공: 늦었으니 공이 지나갈 지점으로 슬라이딩 (잡아도 1초 균형 잡기)
+      const cx = ball.pos.x + ux * (along + sp * .15), cz = ball.pos.z + uz * (along + sp * .15), dx = cx - p.pos.x, dz = cz - p.pos.z, d = Math.hypot(dx, dz) || 1;
+      p.tackleDir = new V(dx / d, 0, dz / d); p.prevToe = null; p.slideSide = Math.random() < .5 ? 1 : -1; p.tackleT = .3; p.tackleCD = 1.3; p.face = Math.atan2(dx, dz); p.slideRecv = true;
+      if (p.team === 0) toast(p.shirt + '번 슬라이딩으로 잡으러!');
+    }
+  }
+  if (!ball.owner && ball.recv && ball.recv.stretchT > 0 && ball.recv.stretchTo) { // 뻗으면서 공이 지나갈 지점 쪽으로 한 발 옮김 (다리 끝 1m에서 공을 받게)
+    const p = ball.recv, dx = p.stretchTo.x - p.pos.x, dz = p.stretchTo.z - p.pos.z, d = Math.hypot(dx, dz);
+    if (d > 1) { const mv = Math.min(d - 1, 4 * dt); p.pos.x += dx / d * mv; p.pos.z += dz / d * mv; }
+  }
   // 공 잡기
   if (!ball.owner && ball.pos.y < 3.3) { // 보통은 2.9m(점프 헤딩)까지, 높이 뛰어 잡기는 3.3m까지
     let best = null, bd = 1e9;
@@ -919,8 +945,7 @@ function updateBall(dt) {
       }
       if (sb && (sp <= 20 || Math.random() < .5)) {
         const side = (ball.pos.x - sb.pos.x) * Math.cos(sb.face) - (ball.pos.z - sb.pos.z) * Math.sin(sb.face);
-        sb.stretchDir = -Math.sign(side) || 1; sb.stretchT = .35; best = sb;
-        const rd = d2(sb.pos, ball.pos); if (rd > 1) { ball.pos.x = sb.pos.x + (ball.pos.x - sb.pos.x) / rd; ball.pos.z = sb.pos.z + (ball.pos.z - sb.pos.z) / rd; } // 공은 다리 끝(몸에서 1m)에 멈춤
+        sb.stretchDir = -Math.sign(side) || 1; sb.stretchT = sb.stretchT > 0 ? Math.min(sb.stretchT, .3) : .45; sb.stretchBal = true; best = sb;
       }
     }
     // 몸 날려 잡기: 보통으로는 못 잡지만 공이 몸 옆 2.2m 안을 막 지나가려 하면(무릎 아래 높이) 몸을 날려 잡음
@@ -996,7 +1021,7 @@ function updateBall(dt) {
     }
   }
   // 태클 (몸 날려 잡고 균형 잡는 중인 선수는 보호 시간 없이 85% 확률로 빼앗김)
-  const wobbly = ball.owner && ((DIVE_CATCH && ball.owner.balanceT > 0) || ball.owner.stam < .2) && !ball.setPiece && !ball.inHands && kickoffLock < 0; // 체력이 바닥난(20% 아래) 선수는 붙자마자 85% 확률로 빼앗김
+  const wobbly = ball.owner && (((DIVE_CATCH || ball.owner.wobT > 0) && ball.owner.balanceT > 0) || ball.owner.stam < .2) && !ball.setPiece && !ball.inHands && kickoffLock < 0; // 체력이 바닥난(20% 아래) 선수는 붙자마자 85% 확률로 빼앗김
   if (ball.owner && (ball.stealT <= 0 || wobbly)) {
     for (const p of players) {
       if (p.team === ball.owner.team || p.tackleCD > 0) continue;
@@ -1741,6 +1766,7 @@ function shoulderCharge(c, auto = false) {
   if (!q) return false;
   const dx = q.pos.x - c.pos.x, dz = q.pos.z - c.pos.z, d = Math.hypot(dx, dz) || .1, ux = dx / d, uz = dz / d;
   q.vel.x += ux * 4; q.vel.z += uz * 4; q.balanceT = .6; q.shoveT = .45; q.shoveDir = -1; // 밀려나며 비틀거림
+  if (q.wobT > 0) { q.downT = .9; q.getUpT = GETUP; q.wobT = 0; if (q.team === 0) toast(q.shirt + '번 균형 잃은 채 밀려 넘어짐'); } // 뻗어 받고 균형 잡는 중에 몸싸움 당하면 넘어짐
   c.chargeCD = 1.2; c.shoveT = .3; c.shoveDir = 1; c.face = Math.atan2(ux, uz); c.vel.x += ux * 1.5; c.vel.z += uz * 1.5;
   if (ball.owner === q) {
     if (Math.random() < .65) { give(c); ball.stealT = .5; if (c.team === 0) toast('몸싸움으로 뺏음!'); else toast('몸싸움에 밀려 뺏김'); }
@@ -1769,8 +1795,9 @@ function updateTackles(dt) {
     let toeHit = false; for (let k = 0; k <= 4 && !toeHit; k++) { const f = k / 4, tx = pt.x + (toe.x - pt.x) * f, tz = pt.z + (toe.z - pt.z) * f, bx = ball.pos.x - ball.vel.x * dt * (1 - f), bz = ball.pos.z - ball.vel.z * dt * (1 - f); toeHit = Math.hypot(tx - bx, tz - bz) < .4; }
     if ((free || rival) && !ball.inHands && !ball.dead && kickoffLock < 0 && ball.pos.y < .6 && toeHit) {
       p.tackleT = 0; p.getUpT = GETUP; // 태클 끝 → 손 짚고 일어남
-      if (free || Math.random() < .75) { give(p); p.balanceT = 1; toast('태클 성공!'); } // 태클 후 1초 텀: 걷는 속도로만
+      if (free || Math.random() < .75) { give(p); p.balanceT = 1; p.wobT = .7; toast(p.slideRecv ? (p.team === 0 ? p.shirt + '번 슬라이딩으로 잡음! 균형 잡는 중' : '상대가 슬라이딩으로 잡음') : '태클 성공!'); } // 태클 후 1초 텀: 걷는 속도로만
       else { p.downT = 1; toast('태클 실패!'); }                                      // 실패하면 1초 넘어져 있음
+      p.slideRecv = false;
     } else if (p.tackleT <= 0) { p.downT = 1; p.getUpT = GETUP; } // 헛태클: 1초 텀 (손 짚고 일어남)
   }
 }
@@ -1893,7 +1920,7 @@ function movePlayers(dt) {
     p.pos.x = clamp(p.pos.x, -HL - 1.5, HL + 1.5); p.pos.z = clamp(p.pos.z, -HW - 1.5, HW + 1.5);
     const vs = Math.hypot(p.vel.x, p.vel.z), run = sprint && vs > .4;
     const tf = run ? Math.atan2(p.vel.x, p.vel.z) : (ball.owner === p ? p.face : Math.atan2(ball.pos.x - p.pos.x, ball.pos.z - p.pos.z));
-    if (!p.lockFace && !(p.dragBackT > 0) && !(p.backT > 0 && ball.owner === p)) p.face = lerpAngle(p.face, tf, Math.min(1, dt * (run ? 10 : 5))); // lockFace: 연습 화면에서 정한 방향 유지
+    if (!p.lockFace && !(p.dragBackT > 0) && !(p.backT > 0 && ball.owner === p) && !(p.stretchT > 0) && !(p.wobT > 0)) p.face = lerpAngle(p.face, tf, Math.min(1, dt * (run ? 10 : 5))); // lockFace: 연습 화면에서 정한 방향 유지
   }
   // 선수끼리 겹치지 않게
   for (let i = 0; i < players.length; i++) for (let j = i + 1; j < players.length; j++) {
@@ -2465,7 +2492,7 @@ function labViewOffset() {
 // ---------- 패스 받기 연습 화면 (?lab=recv): 빗나간 패스를 어디까지 받나 ----------
 // 4번이 6번에게 패스. 패스가 6번 옆으로 얼마나 빗나가는지(옆 오차), 6번이 어느 쪽을 보고 있는지, 공 속도를 바꿔 가며
 // 발밑에서 깨끗이 받는지 / 다리를 뻗어 받는지 / 돌아서서 받는지 / 놓치는지 본다. 값(발밑 거리·뻗는 거리·돌아서는 시간)은 경기에도 적용
-const rv = { off: 1.0, faceDeg: 0, speed: 0, dist: 15, phase: 'ready', t: 0, result: null, info: '', resetT: 0, auto: false, log: [], minD: 99, tally: { 발밑: 0, 뻗어: 0, 돌아서: 0, 놓침: 0, 짧음: 0 } };
+const rv = { off: 1.0, faceDeg: 0, speed: 0, dist: 15, phase: 'ready', t: 0, result: null, info: '', resetT: 0, auto: false, log: [], minD: 99, tally: { 발밑: 0, 뻗어: 0, 슬라이딩: 0, 돌아서: 0, 놓침: 0, 짧음: 0 } };
 const RV_SCENE = [['off', '패스 옆 오차 (m, 6번 기준 옆으로 빗나감)', 0, 3.5, .1], ['faceDeg', '6번이 보는 방향 (0 = 공 쪽, 180 = 등진 채)', 0, 180, 15], ['speed', '패스 세기 보정 (m/s, 0 = 경기 기본 세기)', -8, 8, 1], ['dist', '패스 거리 (m)', 8, 30, 1]];
 const RV_TUNE = [['recvClean', '발밑에서 그냥 받는 거리 (m)', .5, 2, .1], ['recvStretch', '다리 뻗어 받는 최대 거리 (m)', 1, 3, .1], ['recvTurn', '등 뒤 공: 돌아서는 시간 (초)', .1, .8, .05]];
 const RV_STEPS = [[0, 0], [.5, 0], [1, 0], [1.5, 0], [2, 0], [2.5, 0], [3, 0], [0, 180], [1, 180], [1.5, 180], [2, 180], [1, 90], [2, 90]]; // N키: 상황 하나씩 넘기기 (옆 오차, 보는 방향)
@@ -2493,14 +2520,14 @@ function recvReset() {
   for (const p of players) {
     const show = p === cb || p === mf;
     p.g.visible = show; if (!show) p.pos.set(HL - 1, 0, HW + 1);
-    p.vel.set(0, 0, 0); p.diveT = p.jumpT = p.tackleT = p.downT = p.overlapT = p.turnT = p.stretchT = p.scanT = 0; p.recvTurned = false; p.lockFace = false;
+    p.vel.set(0, 0, 0); p.diveT = p.jumpT = p.tackleT = p.downT = p.overlapT = p.turnT = p.stretchT = p.scanT = p.getUpT = p.balanceT = p.wobT = p.tackleCD = 0; p.stK = 0; p.recvTurned = false; p.lockFace = false;
   }
   freeze = 0; pendingKickoff = -1; kickoffLock = -1; ball.dead = null; ball.inNet = 0; manualCtrl = null; userMove = null;
   $('msg').style.display = 'none';
   cb.pos.set(-20 - rv.dist, 0, 0); cb.face = Math.PI / 2;
   mf.pos.set(-20, 0, 0); mf.face = -Math.PI / 2 + rv.faceDeg * Math.PI / 180; mf.lockFace = true; // 0도 = 공(4번) 쪽을 봄
   ball.vel.set(0, 0, 0); ball.pos.set(cb.pos.x + .75, BR, cb.pos.z); give(cb); ball.stealT = 1e9;
-  Object.assign(rv, { phase: 'ready', t: 0, result: null, info: '', resetT: 0, minD: 99, turned: false });
+  Object.assign(rv, { phase: 'ready', t: 0, result: null, info: '', resetT: 0, minD: 99, turned: false, slid: false });
   recvShow();
 }
 function recvPass() {
@@ -2520,13 +2547,14 @@ function recvNext() { // 미리 정한 상황을 하나씩 넘김
 function recvThink(dt) {
   const { cb, mf } = rvP();
   for (const p of players) { p.target.copy(p.pos); p.speed = 0; }
-  if (ball.owner === mf && rv.phase === 'own') { mf.target.set(mf.pos.x + Math.sin(mf.face) * 3, 0, mf.pos.z + Math.cos(mf.face) * 3); mf.speed = 3; } // 받은 뒤 천천히 몰고 감
+  if (ball.owner === mf && rv.phase === 'own' && !(mf.balanceT > 0)) { mf.target.set(mf.pos.x + Math.sin(mf.face) * 3, 0, mf.pos.z + Math.cos(mf.face) * 3); mf.speed = 3; } // 균형 잡은 뒤 천천히 몰고 감
+  if (mf.tackleT > 0) { mf.target.copy(mf.pos).addScaledVector(mf.tackleDir, 3); mf.speed = 8; }
   if (rv.phase === 'pass') {
-    rv.t += dt; rv.minD = Math.min(rv.minD, d2(mf.pos, ball.pos)); if (mf.recvTurned) rv.turned = true;
+    rv.t += dt; rv.minD = Math.min(rv.minD, d2(mf.pos, ball.pos)); if (mf.recvTurned) rv.turned = true; if (mf.tackleT > 0) rv.slid = true;
     if (ball.owner === mf) {
       const d = d2(mf.pos, ball.snapFrom || ball.pos), turned = !!rv.turned;
-      rv.result = mf.stretchT > 0 ? '뻗어' : turned ? '돌아서' : '발밑';
-      rv.info = `잡은 순간 공까지 ${d.toFixed(2)}m · ${rv.result === '뻗어' ? '다리 뻗어 받음' : rv.result === '돌아서' ? '등 뒤 공: 돌아선 뒤 받음' : '발밑에서 그대로 받음'}${turned && rv.result === '뻗어' ? ' (돌아선 뒤)' : ''}`;
+      rv.result = mf.getUpT > 0 || rv.slid ? '슬라이딩' : mf.stretchT > 0 ? '뻗어' : turned ? '돌아서' : '발밑';
+      rv.info = `잡은 순간 공까지 ${d.toFixed(2)}m · ${rv.result === '슬라이딩' ? '늦어서 슬라이딩으로 잡음 → 1초 균형 잡기 (뺏기기 쉬움)' : rv.result === '뻗어' ? '다리 뻗어 받음 → 0.7초 균형 잡기 (뺏기기 쉬움)' : rv.result === '돌아서' ? '등 뒤 공: 돌아선 뒤 받음' : '발밑에서 그대로 받음'}${turned && rv.result === '뻗어' ? ' (돌아선 뒤)' : ''}`;
     } else if (ball.owner === cb) { rv.result = '놓침'; rv.info = '공이 4번에게 되돌아감'; }
     else if (rv.t > 1 && Math.hypot(ball.vel.x, ball.vel.z) < .5) { rv.result = '짧음'; rv.info = `공이 ${rv.minD.toFixed(2)}m 앞에서 멈춤 (패스가 짧음)`; }
     else if (rv.t > 1 && d2(mf.pos, ball.pos) > 8 && rv.minD < d2(mf.pos, ball.pos)) { rv.result = '놓침'; rv.info = `가장 가까웠던 거리 ${rv.minD.toFixed(2)}m — 못 받고 지나감${rv.turned ? ' (돌아서는 사이)' : ''}`; }
@@ -2544,7 +2572,7 @@ function recvShow() {
   $('labOut').innerHTML =
     `단계: ${{ ready: '패스 대기', pass: '공 이동 중', own: '결과' }[rv.phase]}<br>` +
     `결과: <b>${rv.result || '-'}</b><br>${rv.info || '-'}<br>` +
-    `누적: 발밑 ${rv.tally.발밑} · 뻗어 ${rv.tally.뻗어} · 돌아서 ${rv.tally.돌아서} · 놓침 ${rv.tally.놓침} · 짧음 ${rv.tally.짧음}`;
+    `누적: 발밑 ${rv.tally.발밑} · 뻗어 ${rv.tally.뻗어} · 슬라이딩 ${rv.tally.슬라이딩} · 돌아서 ${rv.tally.돌아서} · 놓침 ${rv.tally.놓침} · 짧음 ${rv.tally.짧음}`;
   const lg = $('rvLog'); if (lg) lg.innerHTML = rv.log.join('<br>');
 }
 function recvCamera() { // 6번 주변을 비스듬히 위에서
@@ -2960,8 +2988,11 @@ function frame(now) {
     // + 가속할 땐 앞으로 숙이고, 브레이크를 밟을 땐 몸을 뒤로 젖혀 버팀
     const accLean = clamp((p.accF || 0) / 8, -1, 1) * .3;
     if (p.lungeT > 0) p.lungeT -= dt; // W 잡기 집중(낮은 공): 몸을 앞으로 뻗음
-    if (p.stretchT > 0) p.stretchT -= dt; // 쭉 뻗어 받기: 공 쪽으로 몸을 기울이고 다리를 뻗음
-    const reachLean = p.lungeT > 0 || p.stretchT > 0 ? .35 : 0;
+    if (p.stretchT > 0) { p.stretchT -= dt; if (p.stretchT <= 0 && p.stretchBal) { p.stretchBal = false; p.wobT = .7; p.balanceT = Math.max(p.balanceT || 0, .7); } } // 쭉 뻗어 받기: 공 쪽으로 몸을 기울이고 다리를 뻗음 → 끝나면 0.7초 비틀거리며 균형 잡기
+    if (p.wobT > 0) p.wobT -= dt;
+    p.stK = (p.stK || 0) + ((p.stretchT > 0 ? 1 : 0) - (p.stK || 0)) * Math.min(1, dt * 10); // 뻗는 자세 정도 (0.1초쯤에 걸쳐 들어가고 풀림)
+    const stK = p.stK, wobK = p.wobT > 0 ? (p.wobT / .7) * (1 - stK) : 0;
+    const reachLean = p.lungeT > 0 ? .35 : stK > .02 || wobK > 0 ? .35 * stK - .12 * wobK : 0;
     p.lean += ((p.diveT > 0 ? 0 : p.kickAnim > 0 ? (p.kickLean || 0) : slide ? .15 : recov ? .45 * (1 - upK) : p.trapT > 0 ? -.4 : clamp(fw / 7, -1, 1) * .12 + accLean + reachLean) - p.lean) * Math.min(1, dt * (p.kickShot && p.kickAnim > 0 ? 30 : 12));
     p.g.rotation.x = p.lean;
     p.g.rotation.z = p.shoveT > 0 ? (p.shoveDir || 1) * .35 * Math.min(1, p.shoveT / .2) : 0; // 몸싸움: 미는 쪽은 어깨를 기울이고, 밀린 쪽은 반대로 비틀거림
@@ -2987,13 +3018,16 @@ function frame(now) {
     // (다이빙 시간은 movePlayers에서 줄임)
     // 페인팅 중엔 속이는 쪽으로 몸을 기울임 (몸 방향 기준 좌우)
     const feintRoll = p.feintT > 0 ? -.4 * Math.sign(p.feintDir.x * Math.cos(p.face) - p.feintDir.z * Math.sin(p.face)) : 0;
-    p.roll = (p.roll || 0) + (((p.diveT > 0) ? p.diveDir * (divePhase(p) === 'crouch' ? .35 : p.diveT < .2 ? 1.5 * p.diveT / .2 : 1.5) : p.stretchT > 0 ? p.stretchDir * .4 : feintRoll) - (p.roll || 0)) * Math.min(1, dt * 14);
+    p.roll = (p.roll || 0) + (((p.diveT > 0) ? p.diveDir * (divePhase(p) === 'crouch' ? .35 : p.diveT < .2 ? 1.5 * p.diveT / .2 : 1.5) : stK > .02 || wobK > 0 ? p.stretchDir * (.5 * stK + Math.sin(p.wobT * 20) * .3 * wobK) : feintRoll) - (p.roll || 0)) * Math.min(1, dt * (p.wobT > 0 ? 30 : 14));
     p.g.rotation.z = p.roll;
     if (p.diveT > 0) { // 다이빙: 발이 아니라 몸 가운데(엉덩이 높이 1m)를 기준으로 눕힘 → 공중에서 수평으로 날았다가 바닥에 누움
       const r = p.roll, H = diveH(p); // 몸 가운데가 있어야 할 높이
       p.g.position.y = H - Math.cos(r); p.g.position.x = p.pos.x + Math.sin(r) * Math.cos(p.face); p.g.position.z = p.pos.z - Math.sin(r) * Math.sin(p.face);
     }
-    if (p.stretchT > 0) { const lg = p.stretchDir > 0 ? p.legL : p.legR; lg.rotation.x = -.5; lg.rotation.z = -p.stretchDir * .9; } // 공 쪽 다리를 옆으로 쭉 뻗음
+    if (stK > .02) { const k = stK, mix = (o, t) => o * (1 - k) + t * k, lg = p.stretchDir > 0 ? p.legL : p.legR, ol = p.stretchDir > 0 ? p.legR : p.legL; // 공 쪽 다리를 옆으로 쭉 뻗고 디딤발은 몸 밑에서 버팀 (서서히)
+      lg.rotation.x = mix(lg.rotation.x, -.3); lg.rotation.z = mix(lg.rotation.z, -p.stretchDir * 1.15); ol.rotation.x = mix(ol.rotation.x, 0); ol.rotation.z = mix(ol.rotation.z, p.stretchDir * .15);
+      const oa = p.stretchDir > 0 ? p.armR : p.armL, sa = p.stretchDir > 0 ? p.armL : p.armR; oa.rotation.z = mix(oa.rotation.z, p.stretchDir * 1.3); oa.rotation.x = mix(oa.rotation.x, -.3); sa.rotation.z = mix(sa.rotation.z, -p.stretchDir * .4); sa.rotation.x = mix(sa.rotation.x, .5); } // 반대 팔은 옆으로 크게 벌려 균형, 공 쪽 팔은 뒤로
+    if (wobK > .02) { const k = Math.min(1, wobK * 2), w = Math.sin(p.wobT * 20) * .2; p.armL.rotation.z = p.armL.rotation.z * (1 - k) + (-1.1 - w) * k; p.armR.rotation.z = p.armR.rotation.z * (1 - k) + (1.1 - w) * k; p.armL.rotation.x = p.armL.rotation.x * (1 - k) - .4 * k; p.armR.rotation.x = p.armR.rotation.x * (1 - k) - .4 * k; } // 균형 잡기: 두 팔을 벌리고 흔들리다 서서히 내림
     if (p.diveT > 0) { const ph = divePhase(p); // 다이빙: 웅크릴 땐 팔을 뒤로 빼고 무릎 굽힘, 날 땐 두 팔을 머리 위로 쭉 뻗고 다리 곧게, 착지 땐 팔 뻗은 채 누움
       if (ph === 'crouch') { p.armL.rotation.x = p.armR.rotation.x = .7; p.legL.rotation.x = p.legR.rotation.x = -.6; }
       else { p.armL.rotation.x = p.armR.rotation.x = ph === 'up' ? -1.2 : -2.8; p.armL.rotation.z = -.15; p.armR.rotation.z = .15; p.legL.rotation.x = p.legR.rotation.x = ph === 'fly' ? .25 : .1; } }
@@ -3006,7 +3040,7 @@ function frame(now) {
       p.legR.rotation.x = -1.45 * r; p.legL.rotation.x = 1.05 * r; p.legL.rotation.z = p.legR.rotation.z = 0;
       p.armR.rotation.x = -.6 * r; p.armR.rotation.z = .2; p.armL.rotation.x = -.3 * r; p.armL.rotation.z = -.3 * r;
     }
-    if (!(p.jumpT > 0) && !(p.diveT > 0)) p.g.position.y = slide ? -.55 : recov ? -.55 * Math.pow(1 - upK, 1.5) : 0; // 태클·균형 잡기: 몸을 낮춤
+    if (!(p.jumpT > 0) && !(p.diveT > 0)) p.g.position.y = slide ? -.55 : recov ? -.55 * Math.pow(1 - upK, 1.5) : p.stK > .02 || p.wobT > 0 ? -.22 * (p.stK || 0) - .12 * (p.wobT > 0 ? (p.wobT / .7) * (1 - (p.stK || 0)) : 0) : 0; // 태클·균형 잡기: 몸을 낮춤
     if (p.knL) { // 졸라맨 관절: 무릎·팔꿈치·허리·목
       // 무릎: 뒤로 간 다리를 깊게 접음. 서 있을 땐 무릎을 굽힌 준비 자세(골키퍼는 더 깊게)
       let kl = amp * (.3 + 1.5 * Math.max(0, Math.sin(p.stride - .6))), kr = amp * (.3 + 1.5 * Math.max(0, -Math.sin(p.stride - .6)));
@@ -3021,6 +3055,7 @@ function frame(now) {
       if (p.trapT > 0) kl = kr = .55;        // 가슴 트래핑: 무릎 굽힘
       if ((p.accF || 0) < -3 && !still) { kl += .35; kr += .35; } // 브레이크: 무릎을 굽혀 버팀
       if (p.balanceT > 0) { kl = kr = .75; } // 몸 날려 잡은 뒤 웅크려 균형 잡는 중
+      if (stK > .02) { const tl = p.stretchDir > 0 ? .05 : .8, tr = p.stretchDir > 0 ? .8 : .05; kl = kl * (1 - stK) + tl * stK; kr = kr * (1 - stK) + tr * stK; } // 뻗는 다리는 쭉 펴고 디딤발은 깊게 굽힘
       if (slide) { kl = .25; kr = .05; } // 디딤발은 몸 밑에서 굽혀 받치고 태클 다리는 쭉 폄
       if (recov) { kl = .25 + .5 * (1 - upK); kr = .05 + .7 * (1 - upK); }
       p.knL.rotation.x = kl; p.knR.rotation.x = kr;
