@@ -1608,7 +1608,7 @@ function think(dt) {
   // → 앞으로 찔러 주는 패스를 받을 사람이 항상 생김. 공 가진 선수 체력이 40% 아래(더 못 달림)면 부스터까지 켜고 감
   if (ball.owner && !ball.owner.gk && !ball.setPiece && !ball.inHands && kickoffLock < 0) {
     const o = ball.owner, s = sgn(o.team), bx = s * o.pos.x, fwd = s * o.vel.x;
-    if (fwd > 3 && bx > -10) {
+    if ((fwd > 3 || (bx > 15 && fwd > -1)) && bx > -10) { // 앞으로 달리는 중이거나, 상대 진영 깊은 곳(15m 앞)에서 공을 갖고 있으면(지쳐서 느려져도) 서포트 계속
       const cands = players.filter(q => q.team === o.team && q !== o && !q.gk && role(q) !== 'df' && !(q.downT > 0) && !q.sideRun && d2(q.pos, o.pos) < 35)
         .sort((a, b) => d2(a.pos, o.pos) - d2(b.pos, o.pos)); // 35m 안 미드·공격수 전원
       const tired = (o.stam === undefined ? 1 : o.stam) < .4;
