@@ -121,7 +121,7 @@ b{color:#ffe14d}
 <b>휠</b> 확대 · 축소 (공 없을 때)<br>
 <b>V</b> 방향 화살표 &nbsp; <b>M</b> 미니맵<br>
 <b>한 컷씩</b>(버튼) 패스·받기마다 멈추고 모두의 움직임을 화살표로 — 스페이스 다음 장면, → 0.5초, 멈춘 채 패스 지시 가능, 우리 선수 화살표 끝을 끌어 놓으면 그리로 달림<br>
-<b>P</b> 경기 멈춤/재개 &nbsp; <b>R</b> 리플레이 (최근 8초, 골 뒤엔 자동, 멈춘 상태에서도) — 리플레이 중 ←→ 3초 이동(60초까지), 스페이스 멈춤, ↑↓ 속도, <b>S</b> 녹화 시작 → <b>E</b> 녹화 끝(그 구간만 저장, 분석용)<br>
+<b>P</b> 경기 멈춤/재개 &nbsp; <b>R</b> 리플레이 (최근 8초, 골 뒤엔 자동, 멈춘 상태에서도) — 리플레이 중 ←→ 3초 이동(30초까지), 스페이스 멈춤, ↑↓ 속도, <b>S</b> 녹화 시작 → <b>E</b> 녹화 끝(그 구간만 저장, 분석용)<br>
 <b>H</b> 이 설명 열기/닫기<br>
 <b>속도 0.5× / 0.75× / 1×</b> 게임 속도 &nbsp; <b>전체화면</b> 주소창 없이 (Esc로 나감) &nbsp; <b>저사양</b> 관중·그림자 끄기 (노트북)<br>
 <b>🔊</b> 소리 켜고 끄기<br>
@@ -3303,7 +3303,7 @@ function updateExtras(dt) { updateCrowd(dt); updateBallBoys(dt); updateSound(dt)
 // 매 프레임 선수·공 위치와 동작 타이머를 최근 12초만큼 기록해 두었다가, R 키(최근 8초) 또는 골 직후(최근 6초) 느리게(0.5배) 다시 보여 줌
 // 리플레이 중엔 경기(생각·이동·공 물리·시간)가 멈추고, 끝나면 리플레이 시작 때 상태로 돌아가 이어짐. 아무 키·클릭으로 건너뜀
 const RP_FIELDS = ['kickAnim', 'kickLen', 'kickBig', 'kickShot', 'kickPw', 'tackleT', 'downT', 'getUpT', 'diveT', 'jumpT', 'jumpLen', 'throwAnim', 'lean'];
-const rpBuf = [], RP_MAX = 60 * 60; // 최근 60초 기록
+const rpBuf = [], RP_MAX = 30 * 60; // 최근 30초 기록
 let replay = null, paused = false;
 function rpSnap() { // 지금 상태 한 장
   const ps = players.map(p => [p.pos.x, p.pos.y, p.pos.z, p.face, p.vel.x, p.vel.z, ...RP_FIELDS.map(f => +p[f] || 0)]);
@@ -3339,7 +3339,7 @@ function replayStep(dt) {
   const back = ((replay.frames.length - i) / 60).toFixed(0);
   $('replayTag').textContent = (replay.ended ? '⏹ 리플레이 끝 — ← 되감기 · 그 외 키/클릭으로 경기로' : (replay.paused ? '⏸ ' : '▶ ') + (replay.recFrom !== undefined ? '● 녹화 중 ' : '') + '리플레이 ' + back + '초 전 · ' + replay.speed + '배 — ←→ 3초 이동 · 스페이스 멈춤 · ↑↓ 속도 · 저장됨(저장 목록) · S 다시 저장 끝(저장) · 그 외 키/클릭 끝');
 }
-// 리플레이 조작: ←→ 3초 이동(기록된 60초 안에서 더 뒤로도 감), 스페이스 멈춤/재생, ↑↓ 속도
+// 리플레이 조작: ←→ 3초 이동(기록된 30초 안에서 더 뒤로도 감), 스페이스 멈춤/재생, ↑↓ 속도
 function replayKey(code) {
   if (code === 'Space') { replay.paused = !replay.paused; replay.ended = false; return true; }
   if (code === 'ArrowUp' || code === 'ArrowDown') { const sp = [.25, .5, 1]; let k = sp.indexOf(replay.speed); if (k < 0) k = 1; k = clamp(k + (code === 'ArrowUp' ? 1 : -1), 0, 2); replay.speed = sp[k]; return true; }
@@ -3424,7 +3424,7 @@ addEventListener('mousemove', e => { if (!stepDrag) return; setMouse(e); const g
 addEventListener('mouseup', () => { if (stepDrag) { toast(stepDrag.shirt + '번: 여기로 달리기'); stepDrag = null; } });
 
 // ---------- 리플레이 저장 (리플레이 중 S) ----------
-// 기록된 장면(최근 60초, 초당 20장, 선수 위치·방향·공 위치)을 JSON으로 저장: 사무실 서버(localhost)면 soccer3d/replays/ 폴더에, 아니면 파일 내려받기
+// 기록된 장면(최근 30초, 초당 20장, 선수 위치·방향·공 위치)을 JSON으로 저장: 사무실 서버(localhost)면 soccer3d/replays/ 폴더에, 아니면 파일 내려받기
 function saveReplay(from, to) {
   let all = replay ? replay.all : rpBuf; if (!all.length) { toast('저장할 장면이 아직 없음'); return; }
   if (from !== undefined) all = all.slice(Math.max(0, from), Math.max(from + 1, to)); // 녹화 구간만
@@ -3432,7 +3432,7 @@ function saveReplay(from, to) {
   for (let i = 0; i < all.length; i += step) { const f = all[i]; frames.push({ p: f.ps.map(a => [+a[0].toFixed(2), +a[2].toFixed(2), +a[3].toFixed(2)]), b: [+f.ball[0].toFixed(2), +f.ball[1].toFixed(2), +f.ball[2].toFixed(2)] }); }
   const data = { saved: new Date().toISOString(), score: $('sc').textContent, clock: +clock.toFixed(1), fps: 60 / step, cursor: from !== undefined ? 0 : replay ? Math.round((all.length - replay.frames.length + replay.pos) / step) : Math.round(all.length / step), players: players.map(p => ({ team: p.team, num: p.shirt || p.num, gk: !!p.gk })), note: 'p: [x, z, face] per player (players 순서), b: ball [x, y, z]. x: -52.5(우리 골대)~52.5(상대 골대), z: -34~34', frames };
   const d0 = new Date(), two = n => String(n).padStart(2, '0'), json = JSON.stringify(data), name = 'replay_' + d0.getFullYear() + two(d0.getMonth() + 1) + two(d0.getDate()) + '_' + two(d0.getHours()) + two(d0.getMinutes()) + two(d0.getSeconds()) + '.json'; // 현지 시각
-  if (location.hostname === 'localhost') fetch('/savereplay?name=' + name, { method: 'POST', body: json }).then(r => r.ok ? toast('리플레이 저장됨: ' + name + (replay ? ' (지금 보던 장면 기준)' : ' (최근 60초)')) : toast('저장 실패')).catch(() => toast('저장 실패'));
+  if (location.hostname === 'localhost') fetch('/savereplay?name=' + name, { method: 'POST', body: json }).then(r => r.ok ? toast('리플레이 저장됨: ' + name + (replay ? ' (지금 보던 장면 기준)' : ' (최근 30초)')) : toast('저장 실패')).catch(() => toast('저장 실패'));
   else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = name; a.click(); toast('리플레이 파일 내려받음: ' + name); }
 }
 
@@ -3467,7 +3467,7 @@ function loadSavedReplay(name) {
     if (replay) endReplay();
     replay = { frames, pos: 0, speed: .5, saved: rpSnap(), auto: false, savedMsg: $('msg').style.display, paused: false, all: frames, fromFile: name };
     $('replayTag').style.display = 'block'; $('msg').style.display = 'none'; $('pauseTag').style.display = 'none'; userMove = null; marker.visible = false;
-    replay.pos = Math.max(0, (d.cursor || 0) * dup - 8 * 60); // 저장할 때 보고 있던 장면 8초 전부터 시작 (60초 전 처음부터가 아니라)
+    replay.pos = Math.max(0, (d.cursor || 0) * dup - 8 * 60); // 저장할 때 보고 있던 장면 8초 전부터 시작 (30초 전 처음부터가 아니라)
     rpApply(frames[Math.floor(replay.pos)]); rpFocus.copy(ball.pos); toast('저장된 리플레이: ' + name + ' (저장 당시 보던 장면 8초 전부터)');
   }).catch(() => toast('리플레이 파일을 못 읽음'));
 }
