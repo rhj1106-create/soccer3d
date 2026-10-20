@@ -1434,7 +1434,7 @@ function autoTrap(t) {
   const s = sgn(t), defs = players.filter(p => p.team === t && role(p) === 'df' && !(p.downT > 0)); if (defs.length < 3) return;
   const dep = x => -s * x; // 우리 골대 쪽으로 갈수록 커지는 깊이
   const line = Math.max(...defs.map(p => dep(p.pos.x))); // 우리 최종 수비 라인 깊이
-  if (dep(ball.pos.x) > line - 8) return; // 공이 라인 8m 안이면 안 함 (돌파 중)
+  if (dep(ball.pos.x) > line - 9) return; // 공 가진 상대가 라인 9m 안이면 안 함 (돌파 중)
   if (dep(ball.pos.x) < -5) return; // 공이 하프라인 5m 앞보다 멀면 의미 없음
   const lurker = players.find(q => q.team === o.team && q !== o && !q.gk && dep(q.pos.x) > line - 4 && dep(q.pos.x) < line + 1 && Math.abs(q.pos.z) < 24); // 라인 4m 안에 선 상대 (6m 밖은 라인이 올라가기 전에 받음)
   if (!lurker) return;
