@@ -553,7 +553,12 @@ function offsideLine(team) {
 }
 function isOffside(p) { return sgn(p.team) * p.pos.x > offsideLine(p.team) + .1; }
 function callOffside(p) {
-  restart(1 - p.team, clamp(p.pos.x, -HL + 1, HL - 1), clamp(p.pos.z, -HW + 1, HW - 1), null, '오프사이드! (' + p.shirt + '번)');
+  // 부심 깃발 + 3초 정지 (양 팀이 자리로 물러난 뒤 프리킥으로 재개)
+  ball.dead = { args: [1 - p.team, clamp(p.pos.x, -HL + 1, HL - 1), clamp(p.pos.z, -HW + 1, HW - 1), null, '오프사이드! (' + p.shirt + '번)'], t: 3 };
+  ball.owner = null; ball.recv = null; ball.vel.set(0, 0, 0); userMove = null;
+  flagMan.position.set(clamp(p.pos.x, -HL + 1, HL - 1), 0, Math.sign(p.pos.z || 1) * (HW + 1.5)); flagMan.visible = true; flagT = 3;
+  $('msg').textContent = '오프사이드! (' + p.shirt + '번)'; $('msg').style.display = 'block'; msgT = 3;
+  toast((p.team === 0 ? '우리 ' : '상대 ') + p.shirt + '번 오프사이드 — 3초 뒤 상대 프리킥');
 }
 // 패스 기록: 콘솔에서 passLog 로 확인 (최근 80개)
 window.passLog = [];
@@ -3111,7 +3116,7 @@ addEventListener('keydown', () => { soundInit(); if (AC && snd.on && AC.state ==
 
 const _goalScored = goalScored;
 goalScored = function (team) { crowdExcite(1); const r = _goalScored(team); startReplay(5, true); return r; }; // 골 뒤 자동 리플레이 // 골: 관중 펄쩍 + 함성
-function updateExtras(dt) { updateCrowd(dt); updateBallBoys(dt); updateSound(dt); if (ball.isShot && ball.kickT > 0) soundRoar(.35); }
+function updateExtras(dt) { updateCrowd(dt); updateBallBoys(dt); updateSound(dt); updateFlag(dt); if (ball.isShot && ball.kickT > 0) soundRoar(.35); }
 
 // ---------- 리플레이 ----------
 // 매 프레임 선수·공 위치와 동작 타이머를 최근 12초만큼 기록해 두었다가, R 키(최근 8초) 또는 골 직후(최근 6초) 느리게(0.5배) 다시 보여 줌
@@ -3285,6 +3290,21 @@ function recEnd() {
   if (replay.recFrom === undefined) { toast('먼저 S로 녹화 시작 지점을 찍으세요'); return; }
   const to = rpAbs(); if (to <= replay.recFrom + 10) { toast('구간이 너무 짧음 (S 뒤에 조금 재생한 뒤 E)'); return; }
   saveReplay(replay.recFrom, to); replay.recFrom = undefined;
+}
+
+// ---------- 부심 (오프사이드 때 터치라인에서 깃발을 듦) ----------
+let flagT = 0, msgT = 0;
+const flagMan = new THREE.Group();
+{ const body = new THREE.Mesh(new THREE.BoxGeometry(.4, .6, .25), new THREE.MeshLambertMaterial({ color: 0x111111 })); body.position.y = .75;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.16, 10, 8), new THREE.MeshLambertMaterial({ color: 0xf1c9a5 })); head.position.y = 1.18;
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(.3, .45, .2), new THREE.MeshLambertMaterial({ color: 0x111111 })); legs.position.y = .22;
+  const arm = new THREE.Group(); const pole = new THREE.Mesh(new THREE.CylinderGeometry(.02, .02, 1.6, 6), new THREE.MeshLambertMaterial({ color: 0xdddddd })); pole.position.y = .8;
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(.5, .4), new THREE.MeshBasicMaterial({ color: 0xff7a00, side: THREE.DoubleSide })); flag.position.set(.25, 1.35, 0);
+  arm.add(pole, flag); arm.position.set(.3, .95, 0); arm.rotation.z = -.6; flagMan.add(body, head, legs, arm); flagMan.userData.arm = arm; }
+flagMan.visible = false; scene.add(flagMan);
+function updateFlag(dt) {
+  if (flagT > 0) { flagT -= dt; const arm = flagMan.userData.arm; arm.rotation.z = Math.min(0, arm.rotation.z + dt * 3); flagMan.rotation.y = Math.atan2(ball.pos.x - flagMan.position.x, ball.pos.z - flagMan.position.z); if (flagT <= 0) { flagMan.visible = false; arm.rotation.z = -.6; } }
+  if (msgT > 0) { msgT -= dt; if (msgT <= 0 && !freeze) $('msg').style.display = 'none'; }
 }
 </script>
 </body>
