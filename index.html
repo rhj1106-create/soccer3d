@@ -626,8 +626,8 @@ function inKickLine(p) {
 }
 let kickoffLock = -1;
 function unlockKickoff() { if (kickoffLock >= 0) { kickoffLock = -1; ball.stealT = .3; } }
-const PASS_ARRIVE = 6, PASS_MIN_ARRIVE = 3, PASS_GROUND = (22 - PASS_MIN_ARRIVE) / K; // 땅볼은 초속 6m로 도착(최대 22m/s라 18m 넘으면 3~6m), 3m도 안 되는 21m부터는 띄워서 보냄
-const passV0 = d => Math.min(d * K + PASS_ARRIVE, 22);
+const PASS_ARRIVE = 8, PASS_MIN_ARRIVE = 3, PASS_GROUND = (25 - PASS_MIN_ARRIVE) / K; // 땅볼은 초속 8m로 도착(더 빠르게, 중간에 안 끊기게), 출발 최대 25m/s // 땅볼은 초속 6m로 도착(최대 22m/s라 18m 넘으면 3~6m), 3m도 안 되는 21m부터는 띄워서 보냄
+const passV0 = d => Math.min(d * K + PASS_ARRIVE, 25);
 // 달리는 선수에게 줄 때: 공이 도착하는 시간 동안 그 선수가 갈 자리로 살짝 앞에 (패스 거리의 25%, 최대 3m) → 같은 거리면 세기가 크게 달라지지 않게
 function leadPoint(from, p) {
   let pt = p.pos.clone(); const cap = Math.min(3, d2(from, p.pos) * .25);
