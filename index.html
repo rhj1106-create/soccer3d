@@ -584,7 +584,7 @@ function give(p) {
   if (p.team === 0) manualCtrl = null; // 우리가 공을 잡으면 공 가진 선수가 조작 대상
   // 첫 터치: 공이 발 앞(0.75m)에서 멀리 있을수록 끌어오는 데 시간이 걸림 (1m당 0.15초, 최대 0.35초)
   const foot = Math.hypot(p.pos.x + Math.sin(p.face) * .75 - ball.pos.x, p.pos.z + Math.cos(p.face) * .75 - ball.pos.z, ball.pos.y - BR); // 가슴·머리로 받은 공은 높이 차이만큼 떨어지는 시간
-  ball.snapFrom = ball.pos.clone(); ball.snapLen = ball.snapT = foot > .3 && !ball.setPiece ? Math.min(.35, foot * .15) : 0;
+  ball.snapFrom = ball.pos.clone(); ball.snapLen = ball.snapT = foot > .3 && !ball.setPiece ? (p.stretchT > 0 ? .5 : Math.min(.35, foot * .15)) : 0; // 다리 뻗어 받은 공은 0.5초에 걸쳐 발밑으로 끌어옴
   ball.owner = p; ball.recv = null; ball.keepRecv = null; ball.lastTeam = p.team; ball.vel.set(0, 0, 0); ball.dragMul = 1;
   ball.stealT = 0.6; p.decide = 0.7 + Math.random() * 0.8;
   // 골키퍼가 준 공을 받은 팀원: 1초 동안 안정적으로 키핑 (빼앗기지 않음)
@@ -920,6 +920,7 @@ function updateBall(dt) {
       if (sb && (sp <= 20 || Math.random() < .5)) {
         const side = (ball.pos.x - sb.pos.x) * Math.cos(sb.face) - (ball.pos.z - sb.pos.z) * Math.sin(sb.face);
         sb.stretchDir = -Math.sign(side) || 1; sb.stretchT = .35; best = sb;
+        const rd = d2(sb.pos, ball.pos); if (rd > 1) { ball.pos.x = sb.pos.x + (ball.pos.x - sb.pos.x) / rd; ball.pos.z = sb.pos.z + (ball.pos.z - sb.pos.z) / rd; } // 공은 다리 끝(몸에서 1m)에 멈춤
       }
     }
     // 몸 날려 잡기: 보통으로는 못 잡지만 공이 몸 옆 2.2m 안을 막 지나가려 하면(무릎 아래 높이) 몸을 날려 잡음
