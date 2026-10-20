@@ -2200,7 +2200,7 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (replay) { if (e.code.startsWith('Arrow') || e.code === 'Space') { e.preventDefault(); replayKey(e.code); } else if (e.code === 'KeyS') { if (!e.repeat) recStart(); } else if (e.code === 'KeyE') { if (!e.repeat) recEnd(); } else if (!e.repeat) endReplay(); return; } // 리플레이 조작 / S 녹화 시작 · E 녹화 끝(저장) / 건너뛰기
   if (e.code === 'KeyP' && !e.repeat && !edit && !LAB) { togglePause(); return; } // P: 경기 멈춤/재개 (멈춘 채 R로 리플레이 가능)
-  if (e.code === 'KeyR' && !e.repeat && !edit && !LAB) { startReplay(8); return; } // R: 최근 8초 리플레이
+  if (e.code === 'KeyR' && !e.repeat && !edit && (!LAB || LAB === 'recv')) { startReplay(8); return; } // R: 최근 8초 리플레이 (받기 연습에서도)
   if (paused && stepMode && (e.code === 'Space' || e.code === 'ArrowRight')) { e.preventDefault(); if (!e.repeat) stepGo(e.code === 'ArrowRight' ? .5 : 0); return; }
   if (paused && e.code !== 'KeyH') return;
   if (e.code === 'KeyT') tackle();
@@ -2403,8 +2403,8 @@ addEventListener('keydown', e => {
     if (e.code === 'KeyR') turnReset();
     if (e.code === 'KeyP') turnPass();
   } else if (LAB === 'recv') {
-    if (e.code === 'KeyR') recvReset();
-    if (e.code === 'KeyP') recvPass();
+    if (e.code === 'KeyR' && !replay) recvReset(); // (리플레이 중 R은 리플레이용)
+    if (e.code === 'KeyP' && !replay) recvPass();
     if (e.code === 'KeyN') recvNext();
   }
 });
@@ -2599,9 +2599,9 @@ function recvShow() {
     `누적: 발밑 ${rv.tally.발밑} · 뻗어 ${rv.tally.뻗어} · 슬라이딩 ${rv.tally.슬라이딩} · 돌아서 ${rv.tally.돌아서} · 놓침 ${rv.tally.놓침} · 짧음 ${rv.tally.짧음}`;
   const lg = $('rvLog'); if (lg) lg.innerHTML = rv.log.join('<br>');
 }
-function recvCamera() { // 6번 주변을 비스듬히 위에서
-  const { mf } = rvP();
-  camera.position.set(mf.pos.x - 4, 11 * zoom, mf.pos.z + 14 * zoom); camera.lookAt(mf.pos.x - 4, 0, mf.pos.z);
+function recvCamera() { // 6번이 공을 받을 자리(-20, 0) 주변을 비스듬히 위에서, 고정 (선수를 따라가면 공이 선수 쪽으로 휘는 것처럼 보여서)
+  if (replay) return replayCamera();
+  camera.position.set(-20 - 3, 12 * zoom, 15 * zoom); camera.lookAt(-20 - 3, 0, 0);
   labViewOffset();
 }
 // ---------- 빌드업 턴 연습 (?lab=buildup): 22명 실제 경기 그대로, 4번 → 6번 패스 장면 ----------
@@ -2955,7 +2955,7 @@ function frame(now) {
     if (freeze <= 0 && pendingKickoff >= 0) { $('msg').style.display = 'none'; const t = pendingKickoff; pendingKickoff = -1; placeForKickoff(t); }
   }
   let ctrl = controlled();
-  if (ISO_LAB) { ctrl = LAB === 'turn' ? turnThink(dt) : LAB === 'recv' ? recvThink(dt) : LAB === 'kick' ? kickThink(dt) : LAB === 'intercept' ? icThink(dt) : LAB === 'gk' ? glThink(dt) : labThink(dt); movePlayers(dt); }
+  if (ISO_LAB && !replay && !paused) { ctrl = LAB === 'turn' ? turnThink(dt) : LAB === 'recv' ? recvThink(dt) : LAB === 'kick' ? kickThink(dt) : LAB === 'intercept' ? icThink(dt) : LAB === 'gk' ? glThink(dt) : labThink(dt); movePlayers(dt); }
   else if (freeze <= 0 && !replay && !paused) {
     if (ball.dead && (ball.dead.t -= dt) <= 0) { const a = ball.dead.args; ball.dead = null; restart(...a); }
     clock += dt;
@@ -3304,9 +3304,10 @@ function rpApply(s) {
   players.forEach((p, i) => { const a = s.ps[i]; p.pos.set(a[0], a[1], a[2]); p.face = a[3]; p.vel.set(a[4], 0, a[5]); RP_FIELDS.forEach((f, j) => { p[f] = f === 'kickBig' || f === 'kickShot' ? !!a[6 + j] : a[6 + j]; }); });
   ball.pos.set(s.ball[0], s.ball[1], s.ball[2]); ball.vel.set(s.ball[3], s.ball[4], s.ball[5]); ballMesh.position.copy(ball.pos); if (s.q) ballMesh.quaternion.copy(s.q); // 공 구르는 회전도 그대로
 }
-function recordFrame() { if (ISO_LAB || edit) return; rpBuf.push(rpSnap()); if (rpBuf.length > RP_MAX) rpBuf.shift(); }
+const RP_OK = () => !edit && (!ISO_LAB || LAB === 'recv'); // 리플레이 기록 가능한 화면 (경기, 받기 연습)
+function recordFrame() { if (!RP_OK()) return; rpBuf.push(rpSnap()); if (rpBuf.length > RP_MAX) rpBuf.shift(); }
 function startReplay(sec, auto) {
-  if (replay || ISO_LAB || edit || rpBuf.length < 60) return;
+  if (replay || !RP_OK() || rpBuf.length < 60) return;
   const n = Math.min(rpBuf.length, Math.round(sec * 60));
   replay = { frames: rpBuf.slice(rpBuf.length - n), pos: 0, speed: auto ? .6 : .5, saved: rpSnap(), auto, savedMsg: $('msg').style.display, paused: false, all: rpBuf.slice() };
   $('replayTag').style.display = 'block'; $('msg').style.display = 'none'; $('pauseTag').style.display = 'none';
