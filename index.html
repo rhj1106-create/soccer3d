@@ -578,6 +578,7 @@ function give(p) {
   }
   if (ball.owner !== p) stepEvent((p.team === 0 ? '우리 ' : '상대 ') + p.shirt + '번 공 잡음');
   p.recvAt = performance.now(); // 받은 순간 (논스톱 슈팅 타이밍)
+  if (ball.lastTeam !== undefined && ball.lastTeam !== p.team && !ball.setPiece && ball.owner !== p) transAt = { team: p.team, t: clock }; // 공격 전환 (공을 빼앗음)
   p.fromRebound = !ball.owner && !!ball.lastKicker && ball.lastKicker.gk && ball.lastKicker.team !== p.team; // 골키퍼가 쳐낸 공을 받음
   for (const q of players) { q.letRun = false; q.recvTurned = false; q.stretchTo = null; } // 공을 누가 잡든 흘리며 턴 예약은 끝남
   if (ball.owner !== p) plog("공잡음", { 선수: (p.team ? "상대" : "우리") + p.num, 마지막으로찬선수: ball.lastKicker ? (ball.lastKicker.team ? "상대" : "우리") + ball.lastKicker.num : "-", 찬곳에서: ball.kickFrom && !ball.owner ? d2(ball.pos, ball.kickFrom).toFixed(1) : "-", 이전주인: ball.owner ? (ball.owner.team ? "상대" : "우리") + ball.owner.num : "없음" });
@@ -1050,6 +1051,7 @@ function updateBall(dt) {
 }
 
 // ---------- AI ----------
+let transAt = { team: -1, t: -99 }; // 마지막 공격 전환 (팀, 경기 시각)
 function possTeam() { return ball.owner ? ball.owner.team : ball.recv ? ball.recv.team : ball.lastTeam; }
 function formTarget(p) {
   // 팀 기준 좌표(fx: 자기 골대 -HL → 상대 골대 +HL)로 계산한 뒤 실제 좌표로 바꿈
@@ -1679,6 +1681,23 @@ function think(dt) {
       });
     }
   }
+  // 공격 전환 부채꼴: 공을 빼앗은 뒤 3.5초 동안 미드필더·공격수는 공 쪽으로 모이지 않고, 공 가진 선수에서 앞쪽 130도 부채꼴로 각자 다른 방향으로 전진 (양 팀)
+  if (ball.owner && ball.owner.team === transAt.team && clock - transAt.t < 3.5 && !ball.setPiece && kickoffLock < 0) {
+    const o = ball.owner, t = o.team, s = sgn(t);
+    const fan = players.filter(q => q.team === t && q !== o && !q.gk && role(q) !== 'df' && !(q.downT > 0) && !(q.tackleT > 0) && !(userMove && q === controlled()));
+    if (fan.length) {
+      // 공 가진 선수 기준 각도(앞 = 0, 왼쪽 -, 오른쪽 +) 순서대로 정렬 → 그 순서대로 부채꼴 방향을 줌 (서로 엇갈리지 않게)
+      const ang = q => Math.atan2((q.pos.z - o.pos.z) * s, (q.pos.x - o.pos.x) * s);
+      fan.sort((a, b) => ang(a) - ang(b));
+      const n = fan.length, spread = 130 * Math.PI / 180;
+      fan.forEach((q, i) => {
+        const a = n === 1 ? 0 : -spread / 2 + spread * i / (n - 1);
+        const R = clamp(d2(q.pos, o.pos) + 10, 14, 30); // 지금 거리보다 10m 더 멀리 (14~30m)
+        const pt = new V(clamp(o.pos.x + s * Math.cos(a) * R, -HL + 3, HL - 3), 0, clamp(o.pos.z + s * Math.sin(a) * R, -HW + 2, HW - 2));
+        q.target.copy(onside(q, pt)); q.speed = 7.5; q.supportRun = true; q.runSpot = pt; q.onwardT = 0;
+      });
+    }
+  }
   // 침투: 팀원 패스가 굴러가는 동안(공이 하프라인 5m 뒤보다 앞) 받을 선수·찬 선수 말고 미드·공격수는 공 쪽이 아니라 골대 중앙 쪽 통로로 돌아 들어감 (양 팀)
   //  ① 페널티 스폿 쪽 가운데 ② 공 쪽 니어 통로 ③ 반대쪽 파 통로 ④ 공 뒤 받쳐 주기(백패스·세컨드볼)
   if (!ball.owner && ball.recv && !ball.isShot && !ball.setPiece && !ball.dead && kickoffLock < 0 && ball.lastKicker && ball.recv.team === ball.lastTeam) {
@@ -1690,7 +1709,7 @@ function think(dt) {
       const k = ball.lastKicker, kx = s * k.pos.x;
       const inward = -Math.sign(k.pos.z) || 1; // 찬 선수에서 가운데 쪽
       let cands = players.filter(q => q.team === t && q !== ball.recv && q !== k && !q.gk && role(q) !== 'df' && !(q.downT > 0) && !(q.tackleT > 0) && d2(q.pos, L) < 40 && !(userMove && q === controlled()));
-      const runners = [9, 10, 6].map(n => cands.find(c => c.num === n)).filter(Boolean).sort((a, b) => a.pos.z - b.pos.z); // 지금 좌우 순서대로 (엇갈리지 않게)
+      const runners = [9, 10, 8, 6].map(n => cands.find(c => c.num === n)).filter(Boolean).sort((a, b) => a.pos.z - b.pos.z); // 지금 좌우 순서대로 (엇갈리지 않게)
       if (runners.length) {
         // 통로: 9m 간격(-18·-9·0·9·18) 중 받을 선수가 가는 곳(공 갈 곳 4.5m 안)은 비우고, 각자 옆으로 가장 덜 움직이는 조합 (곧장 앞으로 달리게)
         // 패스 순간에 한 번 정하고 공이 닿을 때까지 고정 (방향이 흔들리지 않게)
@@ -1699,18 +1718,19 @@ function think(dt) {
           let best = null, bc = 1e9;
           const pick = (i, from, acc, cost) => { if (i === runners.length) { if (cost < bc) { bc = cost; best = acc.slice(); } return; } for (let j = from; j < pool.length; j++) { acc.push(pool[j]); pick(i + 1, j + 1, acc, cost + Math.abs(runners[i].pos.z - pool[j])); acc.pop(); } };
           pick(0, 0, [], 0);
-          ball.runPlan = { from: ball.kickFrom, recv: ball.recv, n: runners.length, lanes: new Map(runners.map((q, i) => [q, best ? best[i] : q.pos.z])) };
+          ball.runPlan = { from: ball.kickFrom, recv: ball.recv, n: runners.length, boosted: new Set(), lanes: new Map(runners.map((q, i) => [q, best ? best[i] : q.pos.z])) };
         }
         const lanes = runners.map(q => ball.runPlan.lanes.has(q) ? ball.runPlan.lanes.get(q) : q.pos.z);
         runners.forEach((q, i) => {
-          const depth = [HL - 8, HL - 11, HL - 14][[9, 10, 6].indexOf(q.num)]; // 깊이도 3m씩 어긋나게 (일자로 서지 않게): 9번 가장 깊이
+          const depth = [HL - 8, HL - 11, HL - 14, HL - 14][[9, 10, 8, 6].indexOf(q.num)]; // 깊이도 3m씩 어긋나게 (일자로 서지 않게): 9번 가장 깊이
           const fx = Math.min(s * q.pos.x + 20, depth);
           const pt = new V(s * clamp(fx, -HL + 2, HL - 2), 0, clamp(lanes[i], -HW + 3, HW - 3));
-          q.target.copy(onside(q, pt)); q.speed = 7.5; q.supportRun = true; q.runSpot = pt;
+          q.target.copy(onside(q, pt)); q.speed = 7.5; q.supportRun = true; q.runSpot = pt; q.onwardT = 0; // 다른 규칙(앞사람 계속 전진 등)이 덮어쓰지 않게
+          if (!ball.runPlan.boosted.has(q)) { ball.runPlan.boosted.add(q); if (!(q.boostLeft > 0) && !(q.boostCD > 0)) startBoost(q); } // 패스 순간 부스터로 전속력
         });
         cands = cands.filter(c => !runners.includes(c));
       }
-      const q8 = cands.find(c => c.num === 8);
+      const q8 = null; // (8번도 앞으로 뜀 — 받쳐 주기 역할 없앰)
       if (q8) { const pt = new V(s * clamp(kx - 4, -HL + 2, HL - 2), 0, clamp(k.pos.z + inward * 6, -HW + 3, HW - 3)); q8.target.copy(onside(q8, pt)); q8.speed = 7.5; q8.supportRun = true; q8.runSpot = pt; } // 찬 선수 살짝 뒤 옆 (리턴 패스)
     }
   }
