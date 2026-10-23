@@ -921,9 +921,9 @@ function updateBall(dt) {
       if (ball.pos.y >= (jumping ? 3.4 : 2.9)) continue; // 보통 2.9m, 뛰어 있으면 3.4m까지 머리로 닿음
       if (p === ball.lastKicker && ball.kickT > 0) continue;
       // 먼 팀원에게 가는 패스의 길목(찬 지점 6m 안)에 있는 다른 팀원은 공을 흘려보냄 (가로채서 바로 뺏기는 것 방지). 받을 선수가 공 3m 안이면 예외
-      if (p.team === ball.lastTeam && p !== ball.recv && p !== chaser[p.team] && ball.recv && ball.kickFrom && d2(ball.pos, ball.kickFrom) < 6 && d2(ball.recv.pos, ball.pos) > 3) { if (d2(p.pos, ball.pos) < 1.2 && !(p.dummyT > 0) && !(p.jumpT > 0)) { p.dummyT = .4; if (p.team === 0) toast(p.shirt + '번 흘려보냄'); } continue; } // 공이 발밑을 지날 땐 살짝 뛰어 피함
+      if (false && p.team === ball.lastTeam && p !== ball.recv && p !== chaser[p.team] && ball.recv && ball.kickFrom && d2(ball.pos, ball.kickFrom) < 6 && d2(ball.recv.pos, ball.pos) > 3) { /* 2026-10-23 사용자 요청: 길목 팀원도 공이 오면 잡음 → 흘려보내기 끔 */ if (d2(p.pos, ball.pos) < 1.2 && !(p.dummyT > 0) && !(p.jumpT > 0)) { p.dummyT = .4; if (p.team === 0) toast(p.shirt + '번 흘려보냄'); } continue; } // 공이 발밑을 지날 땐 살짝 뛰어 피함
       if (ball.keepRecv && p !== ball.keepRecv && p.team === ball.keepRecv.team && d2(ball.keepRecv.pos, ball.pos) < 10) continue; // 굴절된 공은 찬 선수가 가까이 있으면 다른 팀원이 안 잡음
-      if (p.team === ball.lastTeam && p !== ball.recv && ball.kickFrom && d2(ball.pos, ball.kickFrom) < 8 && sp > 4) continue; // 찬 직후 굴러가는 우리 패스는 받을 선수 말고는 안 잡음
+      if (p.team === ball.lastTeam && p !== ball.recv && ball.kickFrom && d2(ball.pos, ball.kickFrom) < 2 && sp > 4) continue; // 찬 직후 2m 안만 받을 선수 말고는 안 잡음 (그 뒤로는 지정 안 한 팀원도 공이 앞으로 오면 잡음)
       if (p.gk && p.team === ball.unsavable) continue; // 빈 공간 40% 이상 슈팅은 골키퍼가 못 잡음
       const inBox = Math.abs(p.pos.x) > HL - 16.5 && Math.abs(p.pos.z) < 20;
       const d = d2(p.pos, ball.pos);
@@ -949,7 +949,7 @@ function updateBall(dt) {
       let sb = null, sd = CFG.recvStretch; // (상대 공 가로채기는 아래에서 1.2m로 제한)
       for (const p of players) {
         if (p.gk || (p === ball.lastKicker && ball.kickT > 0) || p.downT > 0 || justKicked(p) || (sp > 14 && ball.pos.y < 1.8 && p.team !== ball.lastTeam)) continue;
-        const mateOK = p.team === ball.lastTeam && !(ball.recv && d2(ball.recv.pos, ball.pos) < 4) && !(ball.kickFrom && d2(ball.pos, ball.kickFrom) < 6); // 받을 선수가 공 4m 안에 없고, 찬 지점에서 6m는 지난 뒤에만 다른 팀원이 뻗어 받음 (길목 팀원은 흘려보냄)
+        const mateOK = p.team === ball.lastTeam && !(ball.recv && d2(ball.recv.pos, ball.pos) < d2(p.pos, ball.pos)) && !(ball.kickFrom && d2(ball.pos, ball.kickFrom) < 2); // 받을 선수보다 내가 공에 더 가까우면 뻗어 잡음 // 받을 선수가 공 4m 안에 없고, 찬 지점에서 6m는 지난 뒤에만 다른 팀원이 뻗어 받음 (길목 팀원은 흘려보냄)
         if (!(p === ball.recv || p === chaser[p.team] || mateOK) || !runReachOK(p, d2(p.pos, ball.pos))) continue;
         if (p.team !== ball.lastTeam && d2(p.pos, ball.pos) >= INTERCEPT_R) continue; // 상대 공은 다리를 뻗어도 1.5보(1.2m)까지 // 팀원 다른 선수는 안 뻗음, 달리는 방향 뒤로 오는 공도 못 뻗음
         const d = d2(p.pos, ball.pos);
@@ -1758,9 +1758,9 @@ function think(dt) {
     // 골키퍼에게 준 패스는 골키퍼가, 골키퍼가 준 패스는 받을 선수가 끝까지 받음
     // 받을 선수 바꾸기: 찬 직후(8m 안)에는 안 바꾸고, 그 뒤에도 원래 받을 선수가 0.8초 넘게 늦을 때만 더 빠른 팀원으로 바꿈 (옆 팀원이 패스를 가로채지 않게)
     if (ball.recv && ball.recv.team === t && !ball.recv.gk && loose[t] && !fromGk(t) && loose[t].p !== ball.recv) {
-      const early = ball.kickFrom && ball.lastTeam === t && d2(ball.pos, ball.kickFrom) < 8;
+      const early = ball.kickFrom && ball.lastTeam === t && d2(ball.pos, ball.kickFrom) < 2;
       const keep = (ball.keepRecv === ball.recv && d2(ball.recv.pos, ball.pos) < 10) || d2(ball.recv.pos, ball.pos) < 4; // 굴절된 공을 찬 선수가 가까이 있거나, 받을 선수가 공 4m 안이면 안 바꿈
-      if (!early && !keep && intercept(ball.recv, 7.2).t > loose[t].t + .8) ball.recv = loose[t].p;
+      if (!early && !keep && intercept(ball.recv, 7.2).t > loose[t].t + .2) ball.recv = loose[t].p; // 지정한 선수보다 0.2초 넘게 먼저 닿는 팀원이 있으면 그 선수가 받으러 감
       else { loose[t] = intercept(ball.recv, 7.2); loose[t].p = ball.recv; chaser[t] = ball.recv; }
     }
     if (loose[t] && possTeam() === t) startOverlap(loose[t]);
