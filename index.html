@@ -939,7 +939,7 @@ function updateBall(dt) {
       const gp = p.gk && p.diveVel && p.diveFrom ? p.diveFrom : p.pos; // 다이빙 중이면 날리기 전 위치로 판정 (다이빙은 모습만, 막는 범위는 예전 그대로)
       const reach = p.gk && inBox && ball.lastTeam !== p.team ? (GK_BODY_ONLY ? d < (p.diveT > 0 ? 1.1 : GK_BODY) && ball.pos.y < 2.5 : d2(gp, ball.pos) < 1.5 || (Math.abs(ball.pos.x - gp.x) < 1.2 && Math.abs(ball.pos.z - gp.z) < lat)) : d < Math.min(p.team !== ball.lastTeam ? INTERCEPT_R : 9, p === ball.recv && p.team === ball.lastTeam ? CFG.recvClean : jumping ? (ball.pos.y > 1.6 ? 1.6 : 1.8) : p === chaser[p.team] || p === ball.recv ? 1.4 : 1.0); /* 상대 공 가로채기는 보폭 1.5배(1.2m)까지만 */ // 팀원 패스를 받을 선수 1.8m, 잡기 집중 중 1.8m(머리 높이 1.6m), 쫓는 선수 1.4m
       if (reach && d < bd && ((p.gk && inBox) || runReachOK(p, d))) { // 달리는 선수 등 뒤로 지나가는 공은 발밑(0.5m)이 아니면 못 받음
-        if (p !== ball.recv && !p.gk && !jumping && sp > 16 && Math.random() > .15) continue; // 빠른 공은 보통 놓침 (잡기 집중 중엔 안 놓침)
+        if (p !== ball.recv && p.team !== ball.lastTeam && !p.gk && !jumping && sp > 16 && Math.random() > .15) continue; /* 2026-10-29: 같은 팀 빠른 패스는 길목 선수도 잡음 (상대 가로채기만 놓침) */ // 빠른 공은 보통 놓침 (잡기 집중 중엔 안 놓침)
         bd = d; best = p;
       }
     }
@@ -1708,7 +1708,8 @@ function think(dt) {
       // 번호별 역할: 9·10·6번 = 골대 쪽으로 뛰되 경기장 폭을 나눠 서로 다른 통로로 (수비수도 갈라지게), 8번 = 찬 선수와 7m 거리 두고 살짝 뒤에서 다시 받을 준비
       const k = ball.lastKicker, kx = s * k.pos.x;
       const inward = -Math.sign(k.pos.z) || 1; // 찬 선수에서 가운데 쪽
-      let cands = players.filter(q => q.team === t && q !== ball.recv && q !== k && !q.gk && role(q) !== 'df' && !(q.downT > 0) && !(q.tackleT > 0) && d2(q.pos, L) < 40 && !(userMove && q === controlled()));
+      const ballComing = q => { if (sp0 < 2) return false; const ux = ball.vel.x / sp0, uz = ball.vel.z / sp0, rx = q.pos.x - ball.pos.x, rz = q.pos.z - ball.pos.z, al = rx * ux + rz * uz; return al > 0 && al < sp0 / K && Math.abs(rx * uz - rz * ux) < 2.5; }; // 공이 내 앞 2.5m 안으로 지나감 → 침투하지 말고 받음
+      let cands = players.filter(q => q.team === t && q !== ball.recv && q !== k && !q.gk && role(q) !== 'df' && !(q.downT > 0) && !(q.tackleT > 0) && d2(q.pos, L) < 40 && !(userMove && q === controlled()) && !ballComing(q));
       const runners = [9, 10, 8, 6].map(n => cands.find(c => c.num === n)).filter(Boolean).sort((a, b) => a.pos.z - b.pos.z); // 지금 좌우 순서대로 (엇갈리지 않게)
       if (runners.length) {
         // 통로: 9m 간격(-18·-9·0·9·18) 중 받을 선수가 가는 곳(공 갈 곳 4.5m 안)은 비우고, 각자 옆으로 가장 덜 움직이는 조합 (곧장 앞으로 달리게)
@@ -1766,6 +1767,20 @@ function think(dt) {
     if (loose[t] && possTeam() === t) startOverlap(loose[t]);
     // 흘러가는 공(누가 찼든, 슈팅 제외): 쫓는 선수 말고도 공이 갈 곳 12m 안의 공격수·미드필더 1명만 더 (떼로 몰리지 않게) 상대가 먼저 닿을 것 같아도 공이 갈 곳으로 끝까지 뜀 (양 팀)
     if (loose[t] && !ball.dead && !ball.isShot) { const s3 = sgn(t); players.filter(p => p.team === t && !p.gk && role(p) !== 'df' && p !== chaser[t] && p !== ball.recv && !(p.downT > 0) && !(p.onwardT > 0) && d2(p.pos, loose[t].pt) < 12).sort((a, b) => d2(a.pos, loose[t].pt) - d2(b.pos, loose[t].pt)).slice(0, 1).forEach(p => { const r = intercept(p, 7.2); p.target.copy(chasePoint(p, r.t < 3.5 ? r.pt : loose[t].pt)); p.speed = 7.2; p.pressRole = 'chase'; }); }
+    // 공이 내 앞으로 지나감 (지정 안 한 선수라도): 받을 선수보다 공이 먼저 나에게 닿고 공 길에서 2.5m 안이면, 공 길 위로 한 발 들어가 기다렸다 잡음 (같은 팀 패스, 양 팀)
+    if (!ball.dead && !ball.isShot && ball.lastTeam === t && ball.pos.y < 1) {
+      const bs = Math.hypot(ball.vel.x, ball.vel.z);
+      if (bs > 2) {
+        const ux = ball.vel.x / bs, uz = ball.vel.z / bs, recvAl = ball.recv ? (ball.recv.pos.x - ball.pos.x) * ux + (ball.recv.pos.z - ball.pos.z) * uz : 1e9;
+        let best = null, bAl = 1e9;
+        for (const p of players) {
+          if (p.team !== t || p.gk || p === ball.recv || p === ball.lastKicker || p.downT > 0 || p.tackleT > 0 || (userMove && p === controlled())) continue;
+          const rx = p.pos.x - ball.pos.x, rz = p.pos.z - ball.pos.z, al = rx * ux + rz * uz, lat = Math.abs(rx * uz - rz * ux);
+          if (al > .5 && al < bs / K && lat < 2.5 && al < recvAl - 1 && al < bAl) { bAl = al; best = p; }
+        }
+        if (best) { best.target.set(ball.pos.x + ux * bAl, 0, ball.pos.z + uz * bAl); best.speed = 7.2; best.runSpot = null; best.supportRun = false; best.pressRole = null; chaser[t] = best; ball.recv = best; }
+      }
+    }
   }
   // 상대 AI 미드필더: 패스가 오는 동안(15m 안) 가끔 스스로 뒤를 확인
   const rv = ball.recv;
@@ -1789,6 +1804,7 @@ function think(dt) {
     const fromBehind = bx * fx + bz * fz < -.5 && (-bx * ball.vel.x - bz * ball.vel.z) > 0 && Math.hypot(bx, bz) < 15 && Math.hypot(ball.vel.x, ball.vel.z) / K > Math.hypot(bx, bz) + 1.5 && Math.hypot(ball.vel.x, ball.vel.z) > Math.hypot(lp.vel.x, lp.vel.z) + 2.5 && Math.hypot(bx, bz) > 2.5; // 공이 나까지 굴러올 힘이 있고, 나보다 확실히 빠르고, 아직 2.5m 넘게 떨어져 있을 때만 앞으로 달리며 받음 (아니면 멈춰서 돌아 받음: 같은 속도로 뒤따라오는 공을 끝까지 못 받는 일 방지) // 공이 등 뒤에서 나에게 오는 중
     if (lp === ball.recv && fromBehind && !lp.gk) { const bs = Math.hypot(ball.vel.x, ball.vel.z) || 1; lp.target.copy(loose[t].pt).addScaledVector(ball.vel, 2 / bs); lp.speed = 7.2; } // 등 뒤에서 오는 공: 멈추지 않고 공이 지나갈 선 위로 들어가 같은 방향으로 달리며 받음
     else if (lp === ball.recv && lp.team === ball.lastTeam && !lp.gk && ball.pos.y > 1.2 && ball.vel.y > -6) { const L = flightLanding(); lp.target.set(clamp(L.x, -HL + .5, HL - .5), 0, clamp(L.z, -HW + .5, HW - .5)); lp.speed = 7.2; } // 떠서 오는 패스: 떨어질 곳으로
+    else if (lp === ball.recv && lp.team === ball.lastTeam && !lp.gk && ball.pos.y < 1.2 && meetPoint(lp)) { /* 마중 나가기: meetPoint가 목표를 정함 */ }
     else { lp.target.copy(chasePoint(lp, loose[t].pt)); lp.speed = 7.2; }
   }
 
@@ -1908,6 +1924,17 @@ function boostSmart() {
   return startBoost(p);
 }
 // 흘러가는 공을 쫓을 때의 목표 지점: 속도는 전력 그대로, 방향을 잡음 — 공 6m 안이고 공이 느리면(초속 6m 아래) 공이 굴러가는 방향 앞쪽(공보다 1.5m + 공 속도×0.4 앞)을 목표로 해서 공이 발 앞으로 굴러 들어오게 함 (공 자체를 향해 달리면 지나침)
+// 마중 나가기: 상대가 패스 길목에서 먼저 끊을 수 있으면, 받을 선수는 상대가 닿는 지점보다 공 쪽으로 더 나가서 받음 (전속력, 부스터)
+function meetPoint(p) {
+  const bs = Math.hypot(ball.vel.x, ball.vel.z); if (bs < 1) return false;
+  const mine = intercept(p, 7.2), rival = fastestTo(1 - p.team); if (!rival || rival.t > mine.t + .15) return false; // 내가 먼저 닿으면 평소대로
+  const tt = Math.max(0, rival.t - .35); // 상대가 닿기 0.35초 전 공이 있을 곳
+  const pos = ball.pos.clone(); let vx = ball.vel.x, vz = ball.vel.z;
+  for (let t = 0; t < tt; t += .05) { pos.x += vx * .05; pos.z += vz * .05; const f = Math.exp(-K * .05); vx *= f; vz *= f; }
+  p.target.set(clamp(pos.x, -HL + .5, HL - .5), 0, clamp(pos.z, -HW + .5, HW - .5)); p.speed = 7.5;
+  if (d2(p.pos, pos) > 4) startBoost(p);
+  return true;
+}
 function chasePoint(p, pt) { const bs = Math.hypot(ball.vel.x, ball.vel.z), d = d2(p.pos, ball.pos); if (d < 6 && bs < 6) { const k = Math.max(0, Math.min(1.5 + bs * .4, bs / K - .3)); /* 공이 더 굴러올 거리(bs/K)보다 앞서지 않음 → 멈출 공은 공 쪽으로 가서 잡음 */ const ux = bs > .2 ? ball.vel.x / bs : Math.sin(p.face), uz = bs > .2 ? ball.vel.z / bs : Math.cos(p.face); return new V(ball.pos.x + ux * k, 0, ball.pos.z + uz * k); } return pt; }
 function moveWithInertia(p, want, dt) {
   const dvx = want.x - p.vel.x, dvz = want.z - p.vel.z, v = Math.hypot(p.vel.x, p.vel.z);
@@ -1939,6 +1966,19 @@ function turnPenalty(p, pt) {
   return vl * (1 - (p.vel.x * dx + p.vel.z * dz) / (vl * dl)) / DEC;
 }
 function movePlayers(dt) {
+  if (!ISO_LAB && kickoffLock < 0 && !ball.dead && !edit && !ball.owner && !ball.isShot && ball.lastKicker) { // 침투 질주 (사용자 요청 2026-10-25: 공이 앞으로 찔러지면 공격수는 가다가 멈추지 말고 전력으로)
+    const t = ball.lastTeam, s = sgn(t), fwdV = s * ball.vel.x;
+    if ((t === 0 || t === 1) && ball.lastKicker.team === t && fwdV > 4 && s * ball.pos.x > -15) {
+      for (const p of players) {
+        if (p.team !== t || p.gk || ![7, 9, 10, 11].includes(p.num) || p.downT > 0 || p.tackleT > 0 || (userMove && p === controlled())) continue;
+        if (ball.kickFrom && s * p.pos.x < s * ball.kickFrom.x - 5) continue; // 찬 선수보다 한참 뒤에 있던 선수는 빼고
+        p.sprintT = .8; if (p.speed < 7.5) p.speed = 7.5;
+        const busy = p === ball.recv || p === chaser[t];
+        if (!busy && s * (p.target.x - p.pos.x) < 8) p.target.x = clamp(p.pos.x + s * 10, -HL + 6, HL - 6); // 목표가 코앞이면 계속 골대 쪽으로
+        if (d2(p.pos, p.target) > 12) startBoost(p);
+      }
+    }
+  }
   if (!ISO_LAB && kickoffLock < 0 && !ball.dead && !edit) { // 공격할 때 서로 떨어지기 (이어달리기처럼 줄지어 붙지 않게)
     const at = ball.owner ? ball.owner.team : ball.lastTeam, s = sgn(at);
     if (at === 0 || at === 1) {
@@ -1988,7 +2028,8 @@ function movePlayers(dt) {
     // 순간 체력(0~1): 빨리 달릴수록 빨리 줄고(7.5m/s 질주 8초면 바닥), 공 몰고 달리면 더 빨리(약 7초·40m), 천천히(3m/s 아래) 움직이면 6초 만에 회복. 절반 아래로 떨어지면 최고 속도가 줄어 바닥나면 60%
     if (p.stam === undefined) p.stam = 1;
     { const v = Math.hypot(p.vel.x, p.vel.z); if (p === ball.owner && v > 2.5) p.stam -= dt * (.06 + .1 * (v - 2.5) / 5); else if (v > 4.5) p.stam -= dt * (.04 + .09 * (v - 4.5) / 3); else if (v < 2.5) p.stam += dt * .16; p.stam = clamp(p.stam, 0, 1); }
-    let maxSp = p.speed * (p.stam < .5 && !p.supportRun ? .6 + .8 * p.stam : 1) * (p.num === 4 || p.num === 5 ? 1.2 : 1); // 서포트 달리기 중엔 지쳐도 안 느려짐 (끝까지 따라붙음) // 최종 수비수(센터백 4·5번)는 다른 선수보다 20% 빠름 (양 팀)
+    if (p.sprintT > 0) p.sprintT -= dt;
+    let maxSp = p.speed * (p.stam < .5 && !p.supportRun && !(p.sprintT > 0) ? .6 + .8 * p.stam : 1) * (p.num === 4 || p.num === 5 ? 1.2 : 1); // 서포트 달리기 중엔 지쳐도 안 느려짐 (끝까지 따라붙음) // 최종 수비수(센터백 4·5번)는 다른 선수보다 20% 빠름 (양 팀)
     if (p.boostCD > 0) p.boostCD -= dt;
     if (p.jumpCD > 0) p.jumpCD -= dt;
     if (p.jumpUp > 0) p.jumpUp -= dt;
