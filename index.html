@@ -1779,7 +1779,8 @@ function think(dt) {
     if (ball.recv && ball.recv.team === t && !ball.recv.gk && loose[t] && !fromGk(t) && loose[t].p !== ball.recv) {
       const early = ball.kickFrom && ball.lastTeam === t && d2(ball.pos, ball.kickFrom) < 2;
       const keep = (ball.keepRecv === ball.recv && d2(ball.recv.pos, ball.pos) < 10) || d2(ball.recv.pos, ball.pos) < 4; // 굴절된 공을 찬 선수가 가까이 있거나, 받을 선수가 공 4m 안이면 안 바꿈
-      if (!early && !keep && intercept(ball.recv, 7.2).t > loose[t].t + .2) ball.recv = loose[t].p; // 지정한 선수보다 0.2초 넘게 먼저 닿는 팀원이 있으면 그 선수가 받으러 감
+      const onPath = (() => { const bs = Math.hypot(ball.vel.x, ball.vel.z); if (bs < 2) return false; const ux = ball.vel.x / bs, uz = ball.vel.z / bs, rx = ball.recv.pos.x - ball.pos.x, rz = ball.recv.pos.z - ball.pos.z, al = rx * ux + rz * uz; return al > 0 && al < bs / K + 1 && Math.abs(rx * uz - rz * ux) < 2.5; })(); // 공이 받을 선수 앞 2.5m 안으로 곧장 오는 중
+      if (!early && !keep && !onPath && intercept(ball.recv, 7.2).t > loose[t].t + .2) ball.recv = loose[t].p; // 지정한 선수보다 0.2초 넘게 먼저 닿는 팀원이 있으면 그 선수가 받으러 감
       else { loose[t] = intercept(ball.recv, 7.2); loose[t].p = ball.recv; chaser[t] = ball.recv; }
     }
     if (loose[t] && possTeam() === t) startOverlap(loose[t]);
@@ -2023,6 +2024,17 @@ function movePlayers(dt) {
       const dx = p.target.x - ball.pos.x, dz = p.target.z - ball.pos.z, d = Math.hypot(dx, dz);
       if (d < 7) { const pd = d2(p.pos, ball.pos) || 1, ux = d > .3 ? dx / d : (p.pos.x - ball.pos.x) / pd, uz = d > .3 ? dz / d : (p.pos.z - ball.pos.z) / pd; p.target.set(ball.pos.x + ux * 7, 0, ball.pos.z + uz * 7); }
     });
+  }
+  // 공이 자기 쪽으로 곧장 오고 있으면 (받을 선수가 아니어도) 다른 데로 뛰지 않고 공 길 위에서 기다림 (같은 팀 패스, 양 팀)
+  if (!ISO_LAB && !ball.owner && !ball.dead && !ball.isShot && ball.pos.y < 1 && (ball.lastTeam === 0 || ball.lastTeam === 1)) {
+    const bs = Math.hypot(ball.vel.x, ball.vel.z);
+    if (bs > 2) { const ux = ball.vel.x / bs, uz = ball.vel.z / bs;
+      for (const p of players) {
+        if (p.team !== ball.lastTeam || p.gk || p === ball.recv || p === ball.lastKicker || p.downT > 0 || p.tackleT > 0 || (userMove && p === controlled())) continue;
+        const rx = p.pos.x - ball.pos.x, rz = p.pos.z - ball.pos.z, al = rx * ux + rz * uz, lat = Math.abs(rx * uz - rz * ux);
+        if (al > 1 && al < bs / K + 1 && lat < 2.5) { p.target.set(ball.pos.x + ux * al, 0, ball.pos.z + uz * al); p.speed = 4; p.runSpot = null; }
+      }
+    }
   }
   for (const p of players) {
     if (p.diveT > 0) { p.diveT -= dt; if (p.diveT <= 0) p.diveVel = null; } // 다이빙(몸 날리기) 시간
