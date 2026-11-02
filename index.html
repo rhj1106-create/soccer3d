@@ -769,6 +769,7 @@ function restart(team, x, z, taker, label) {
   taker = taker || players.filter(p => p.team === team && !p.gk).sort((a, b) => Math.hypot(a.pos.x - x, a.pos.z - z) - Math.hypot(b.pos.x - x, b.pos.z - z))[0];
   taker.pos.set(x, 0, z); taker.vel.set(0, 0, 0);
   taker.face = Math.atan2(-x * .5, -z);
+  if (isFreeLabel(label)) for (const p of players) if (p.team !== team && !p.gk && s_behind(p, x)) { const pt = fkDefSpot(p, x, z); p.pos.set(pt.x, 0, pt.z); p.vel.set(0, 0, 0); } // 프리킥: 키커보다 앞에 남은 수비 선수는 골대 쪽 자리로
   for (const p of players) if (p.team !== team) {
     const dx = p.pos.x - x, dz = p.pos.z - z, d = Math.hypot(dx, dz);
     const keep = label === '스로인' || label === '코너킥' || label === '골킥' ? 7 : 9.15; // 프리킥(오프사이드·파울)은 9.15m
@@ -1053,6 +1054,17 @@ function updateBall(dt) {
 // ---------- AI ----------
 let transAt = { team: -1, t: -99 }; // 마지막 공격 전환 (팀, 경기 시각)
 function possTeam() { return ball.owner ? ball.owner.team : ball.recv ? ball.recv.team : ball.lastTeam; }
+// 프리킥(오프사이드·파울) 수비 진형: 수비 팀 필드 선수는 무조건 키커보다 자기 골대 쪽에 섬 (2026-11-02 사용자 규칙)
+const s_behind = (p, kx) => sgn(p.team) * p.pos.x > sgn(p.team) * kx - 1.5; // 키커보다 앞(골대 반대쪽)에 있음
+function fkDefSpot(p, kx, kz) {
+  const s = sgn(p.team), pt = formTarget(p).clone();
+  if (s * pt.x > s * kx - 3) pt.x = kx - s * 3;                 // 키커보다 앞(우리 골대 반대쪽)이면 키커 3m 뒤 골대 쪽으로
+  const dx = pt.x - kx, dz = pt.z - kz, d = Math.hypot(dx, dz);  // 공에서 9.15m 밖
+  if (d < 9.15) { if (d > .1) { pt.x = kx + dx / d * 9.15; pt.z = kz + dz / d * 9.15; } else pt.x = kx - s * 9.15; if (s * pt.x > s * kx - 3) { pt.x = kx - s * 3; pt.z = kz + (Math.sign(dz) || 1) * Math.sqrt(Math.max(0, 9.15 ** 2 - 9)); } }
+  pt.x = clamp(pt.x, -HL + 1, HL - 1); pt.z = clamp(pt.z, -HW + 1, HW - 1); return pt;
+}
+const fkWaiting = () => { const a = ball.dead && ball.dead.args; return !!a && isFreeLabel(a[4]) && players.some(p => p.team !== a[0] && !p.gk && s_behind(p, a[1])); };
+const isFreeLabel = l => !!l && l !== '스로인' && l !== '코너킥' && l !== '골킥';
 function formTarget(p) {
   // 팀 기준 좌표(fx: 자기 골대 -HL → 상대 골대 +HL)로 계산한 뒤 실제 좌표로 바꿈
   const s = sgn(p.team), bx = s * ball.pos.x, bz = s * ball.pos.z, atk = possTeam() === p.team;
@@ -1181,6 +1193,7 @@ function fastestTo(team) {
   }
   return best;
 }
+let ctrlHolder = null; // 조작 선수를 고를 때 상대 공 가진 선수 (바뀌면 바로 다시 고름)
 function controlled() {
   if (ball.owner && ball.owner.team === 0) return ball.owner;
   if (manualCtrl) return manualCtrl; // 양쪽 버튼으로 직접 고른 선수
@@ -1194,14 +1207,15 @@ function controlled() {
     if (loose[0]) return loose[0].p;
   }
   const oppAttack = ball.owner && ball.owner.team === 1;
-  if (oppAttack) {
-    let ahead = players.filter(p => p.team === 0 && !p.gk && p.pos.x < ball.pos.x - 1.5 && !(p.downT > 0));
-    if (ahead.some(p => p.pressRole !== 'mark')) ahead = ahead.filter(p => p.pressRole !== 'mark'); // 침투자를 따라붙는 선수는 빼고 (뺏어 오면 침투자를 놓침)
-    if (ahead.length) {
-      const aim = new V(ball.pos.x - 6, 0, ball.pos.z * .8);
-      ahead.sort((a, b) => d2(a.pos, aim) - d2(b.pos, aim));
-      if (lastCtrl && lastCtrl.team === 0 && !lastCtrl.gk && lastCtrl.pos.x < ball.pos.x + .5 && !(lastCtrl.downT > 0) && d2(lastCtrl.pos, aim) < d2(ahead[0].pos, aim) + 8) return lastCtrl; // 공보다 골대 쪽에 있는 한 계속 유지 (8m 넘게 더 가까운 선수가 생겨야 바뀜)
-      return ahead[0];
+  if (oppAttack) { // (2026-11-02 사용자 지적: 늦고 엉뚱한 선택) 상대 공 가진 선수 앞 2m(우리 골대 쪽)에 가장 빨리 닿는 선수. 공보다 3m 넘게 뒤에 있으면 1초 벌점
+    const o = ball.owner, aim = new V(o.pos.x - 2, 0, o.pos.z);
+    const tOf = p => d2(p.pos, aim) / 7 + (p.pos.x > o.pos.x + 3 ? 1 : 0) + (p.pressRole === 'mark' ? .3 : 0); // 침투자 마크 중인 선수는 조금 덜 고름
+    const cands = players.filter(p => p.team === 0 && !p.gk && !(p.downT > 0) && !(p.tackleT > 0));
+    if (cands.length) {
+      cands.sort((a, b) => tOf(a) - tOf(b));
+      const fresh = ctrlHolder !== o; ctrlHolder = o; // 상대가 새로 공을 잡았으면 유지 없이 바로 다시 고름
+      if (!fresh && lastCtrl && cands.includes(lastCtrl) && tOf(lastCtrl) <= tOf(cands[0]) + .35) return lastCtrl;
+      return cands[0];
     }
   }
   if (!ball.owner && loose[0]) return loose[0].p;
@@ -1628,7 +1642,11 @@ function pressThink(dt) {
 }
 function think(dt) {
   if (ball.dead) { // 아웃 후 대기: 공은 쫓지 않고 자기 자리로 천천히
-    for (const p of players) { p.target.copy(formTarget(p)); p.speed = 3; }
+    const a = ball.dead.args, fk = isFreeLabel(a[4]);
+    for (const p of players) {
+      if (fk && p.team !== a[0] && !p.gk) { p.target.copy(fkDefSpot(p, a[1], a[2])); p.speed = s_behind(p, a[1]) ? 7.5 : 4; if (s_behind(p, a[1]) && d2(p.pos, p.target) > 8 && !(p.boostLeft > 0) && !(p.boostCD > 0)) startBoost(p); } // 프리킥 수비: 키커보다 골대 쪽으로 (앞에 있던 선수는 전속력)
+      else { p.target.copy(formTarget(p)); p.speed = 3; }
+    }
     marker.visible = false;
     return controlled();
   }
@@ -1966,6 +1984,7 @@ function turnPenalty(p, pt) {
   return vl * (1 - (p.vel.x * dx + p.vel.z * dz) / (vl * dl)) / DEC;
 }
 function movePlayers(dt) {
+  if (ball.setPiece === 'free' && ball.owner) { const o = ball.owner; for (const p of players) if (p.team !== o.team && !p.gk) { const pt = fkDefSpot(p, o.pos.x, o.pos.z); p.target.copy(pt); p.speed = s_behind(p, o.pos.x) ? 7.5 : 4; } } // 프리킥 킥 전: 수비 팀은 키커보다 골대 쪽 진형
   if (!ISO_LAB && kickoffLock < 0 && !ball.dead && !edit && !ball.owner && !ball.isShot && ball.lastKicker) { // 침투 질주 (사용자 요청 2026-10-25: 공이 앞으로 찔러지면 공격수는 가다가 멈추지 말고 전력으로)
     const t = ball.lastTeam, s = sgn(t), fwdV = s * ball.vel.x;
     if ((t === 0 || t === 1) && ball.lastKicker.team === t && fwdV > 4 && s * ball.pos.x > -15) {
@@ -3137,7 +3156,7 @@ function frame(now) {
   let ctrl = controlled();
   if (ISO_LAB && !replay && !paused) { ctrl = LAB === 'turn' ? turnThink(dt) : LAB === 'recv' ? recvThink(dt) : LAB === 'kick' ? kickThink(dt) : LAB === 'intercept' ? icThink(dt) : LAB === 'gk' ? glThink(dt) : labThink(dt); movePlayers(dt); }
   else if (freeze <= 0 && !replay && !paused) {
-    if (ball.dead && (ball.dead.t -= dt) <= 0) { const a = ball.dead.args; ball.dead = null; restart(...a); }
+    if (ball.dead && (ball.dead.t -= dt) <= 0 && (ball.dead.t < -3 || !fkWaiting())) { const a = ball.dead.args; ball.dead = null; restart(...a); } // 프리킥: 수비 팀이 키커보다 골대 쪽으로 다 내려갈 때까지 최대 3초 더 기다림
     clock += dt;
     ctrl = think(dt);
     movePlayers(dt);
